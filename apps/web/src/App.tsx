@@ -10,8 +10,36 @@ import {
   SlidersHorizontal,
   Upload,
 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-import { jobs, profile, type Job } from "./data/sampleJobs";
+import { jobs as sampleJobs, profile as sampleProfile, type Job, type JobStatus } from "./data/sampleJobs";
+
+type Profile = typeof sampleProfile;
+
+type ApiProfile = {
+  name: string;
+  target_roles: string[];
+  skills: string[];
+  locations: string[];
+  dealbreakers: string[];
+};
+
+type ApiJob = {
+  id: number;
+  title: string;
+  company: string;
+  location: string;
+  source_url: string;
+  status: JobStatus;
+  fit: {
+    score: number;
+    matched_skills: string[];
+    missing_skills: string[];
+    role_matches: string[];
+    penalties: string[];
+    summary: string;
+  };
+};
 
 const statusLabels: Record<Job["status"], string> = {
   captured: "Captured",
@@ -28,8 +56,49 @@ function scoreTone(score: number) {
 }
 
 export function App() {
-  const sortedJobs = [...jobs].sort((a, b) => b.fit.score - a.fit.score);
-  const averageScore = Math.round(jobs.reduce((total, job) => total + job.fit.score, 0) / jobs.length);
+  const [profile, setProfile] = useState<Profile>(sampleProfile);
+  const [jobs, setJobs] = useState<Job[]>(sampleJobs);
+  const [dataSource, setDataSource] = useState("Sample data");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDashboardData() {
+      try {
+        const [profileResponse, jobsResponse] = await Promise.all([
+          fetch("http://127.0.0.1:8000/api/profile"),
+          fetch("http://127.0.0.1:8000/api/jobs"),
+        ]);
+        if (!profileResponse.ok || !jobsResponse.ok) {
+          throw new Error("Local API unavailable");
+        }
+        const [apiProfile, apiJobs] = (await Promise.all([
+          profileResponse.json(),
+          jobsResponse.json(),
+        ])) as [ApiProfile, ApiJob[]];
+
+        if (isMounted) {
+          setProfile(mapProfile(apiProfile));
+          setJobs(apiJobs.map(mapJob));
+          setDataSource("Local API");
+        }
+      } catch (_error) {
+        if (isMounted) {
+          setProfile(sampleProfile);
+          setJobs(sampleJobs);
+          setDataSource("Sample data");
+        }
+      }
+    }
+
+    loadDashboardData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const sortedJobs = useMemo(() => [...jobs].sort((a, b) => b.fit.score - a.fit.score), [jobs]);
+  const averageScore = Math.round(jobs.reduce((total, job) => total + job.fit.score, 0) / Math.max(jobs.length, 1));
   const savedCount = jobs.filter((job) => job.status === "saved").length;
   const cautionCount = jobs.filter((job) => job.fit.penalties.length > 0).length;
 
@@ -97,6 +166,7 @@ export function App() {
           <div>
             <p className="eyebrow">Private local dashboard</p>
             <h2>Ranked jobs from your captured session</h2>
+            <p className="data-source">{dataSource}</p>
           </div>
           <label className="search-box">
             <Search size={17} aria-hidden="true" />
@@ -155,6 +225,35 @@ export function App() {
       </section>
     </main>
   );
+}
+
+function mapProfile(profile: ApiProfile): Profile {
+  return {
+    name: profile.name,
+    targetRoles: profile.target_roles,
+    skills: profile.skills,
+    locations: profile.locations,
+    dealbreakers: profile.dealbreakers,
+  };
+}
+
+function mapJob(job: ApiJob): Job {
+  return {
+    id: job.id,
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    sourceUrl: job.source_url,
+    status: job.status,
+    fit: {
+      score: job.fit.score,
+      matchedSkills: job.fit.matched_skills,
+      missingSkills: job.fit.missing_skills,
+      roleMatches: job.fit.role_matches,
+      penalties: job.fit.penalties,
+      summary: job.fit.summary,
+    },
+  };
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

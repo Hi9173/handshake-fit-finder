@@ -8,6 +8,8 @@ importers:
 
   .: {}
 
+  apps/extension: {}
+
   apps/web:
     dependencies:
       '@vitejs/plugin-react':

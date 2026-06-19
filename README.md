@@ -8,7 +8,7 @@ A private local job-fit dashboard for ranking Handshake postings against a user'
 - FastAPI backend in `apps/api`
 - MySQL via Docker Compose
 - Deterministic fit scoring for captured jobs
-- Local-first data model designed for a future Chrome extension
+- Chrome extension scaffold in `apps/extension` for user-initiated visible job capture
 
 ## Local development
 
@@ -42,6 +42,17 @@ Database:
 ```bash
 docker compose up mysql
 ```
+
+Chrome extension:
+
+1. Open `chrome://extensions`.
+2. Enable Developer mode.
+3. Click "Load unpacked".
+4. Select `apps/extension`.
+5. Open Handshake and search normally.
+6. Click "Capture visible jobs" in the Fit Finder widget.
+
+The extension posts the visible job cards to `http://127.0.0.1:8000/api/extension/capture`.
 
 ## Compliance boundary
 

@@ -83,6 +83,7 @@ h1 {
 
 .brand-row p,
 .eyebrow,
+.data-source,
 .summary,
 .company-line,
 .definition-list,
@@ -211,6 +212,11 @@ h1 {
   font-size: 26px;
   line-height: 1.2;
   margin-top: 4px;
+}
+
+.data-source {
+  font-size: 13px;
+  margin-top: 6px;
 }
 
 .search-box {

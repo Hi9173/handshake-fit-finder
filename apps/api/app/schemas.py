@@ -30,6 +30,10 @@ class JobCreate(BaseModel):
     source: str = "manual"
 
 
+class JobCaptureBatch(BaseModel):
+    jobs: list[JobCreate]
+
+
 class FitScoreRead(BaseModel):
     score: int
     matched_skills: list[str]

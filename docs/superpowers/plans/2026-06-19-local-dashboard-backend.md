@@ -73,3 +73,21 @@
 - [ ] Run Python scoring tests.
 - [ ] Run frontend dependency/build checks when pnpm dependencies are available.
 - [ ] Check git status and mirror the repo to Desktop after user approval.
+
+### Task 6: Browser-Assisted Capture
+
+**Files:**
+- Create: `apps/extension/manifest.json`
+- Create: `apps/extension/src/extractor.js`
+- Create: `apps/extension/src/content.js`
+- Create: `apps/extension/src/content.css`
+- Create: `apps/extension/tests/extractor.test.cjs`
+- Modify: `apps/api/app/routes/jobs.py`
+- Modify: `apps/api/app/schemas.py`
+- Modify: `apps/web/src/App.tsx`
+
+- [ ] Add a user-clicked extension widget for visible job capture.
+- [ ] Add a batch capture API endpoint at `/api/extension/capture`.
+- [ ] Persist captured jobs and fit scores through SQLAlchemy.
+- [ ] Update the dashboard to fetch local API data before falling back to sample jobs.
+- [ ] Verify backend tests, extension extractor tests, and frontend build.

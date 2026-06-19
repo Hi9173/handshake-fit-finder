@@ -1,10 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class ApplicationStatus(str, Enum):
@@ -25,7 +29,7 @@ class Profile(Base):
     locations: Mapped[list[str]] = mapped_column(JSON, default=list)
     dealbreakers: Mapped[list[str]] = mapped_column(JSON, default=list)
     seniority: Mapped[str] = mapped_column(String(50), default="entry")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class Job(Base):
@@ -39,7 +43,7 @@ class Job(Base):
     source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     source: Mapped[str] = mapped_column(String(80), default="manual")
     status: Mapped[ApplicationStatus] = mapped_column(String(50), default=ApplicationStatus.captured)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     score: Mapped["FitScore"] = relationship(back_populates="job", uselist=False, cascade="all, delete-orphan")
 
 
@@ -54,6 +58,6 @@ class FitScore(Base):
     role_matches: Mapped[list[str]] = mapped_column(JSON, default=list)
     penalties: Mapped[list[str]] = mapped_column(JSON, default=list)
     summary: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     job: Mapped[Job] = relationship(back_populates="score")
