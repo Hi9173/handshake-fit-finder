@@ -10,3 +10,4 @@ coverage/
 *.pyc
 *.tsbuildinfo
 *.db
+debug-artifacts/

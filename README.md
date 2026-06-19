@@ -54,6 +54,35 @@ Chrome extension:
 
 The extension posts the visible job cards to `http://127.0.0.1:8000/api/extension/capture`.
 
+## Extension debugging automation
+
+The debug runner uses your normal Chrome profile through the Chrome DevTools Protocol.
+
+Start Chrome with a DevTools port:
+
+```bash
+open -na "Google Chrome" --args --remote-debugging-port=9222
+```
+
+Then run against a flexible Handshake URL:
+
+```bash
+pnpm debug:handshake -- --url "https://app.joinhandshake.com/job-search/10926674?query=neoboard&per_page=45&jobType=3&sort=relevance&page=1"
+```
+
+Or run against the currently open Handshake tab:
+
+```bash
+pnpm debug:handshake
+```
+
+The script attempts to reload the unpacked extension from `chrome://extensions`, refreshes/navigates the Handshake tab, clicks "Capture visible jobs", reads the widget debug JSON, captures console errors, and writes:
+
+- `debug-artifacts/latest.json`
+- `debug-artifacts/latest.png`
+
+If automatic extension reload cannot find the extension item, reload it manually in `chrome://extensions` or pass `--skip-extension-reload`.
+
 ## Compliance boundary
 
 The planned browser extension should assist a user's own browsing session. It should score visible jobs and user-selected job detail pages, not crawl Handshake, bypass access controls, call hidden APIs, or bulk collect marketplace data.
