@@ -1,8 +1,9 @@
 (function initializeCaptureWidget() {
   const CAPTURE_MESSAGE = "HFF_CAPTURE_JOBS";
   const extractor = window.HandshakeFitFinderExtractor;
+  const capture = window.HandshakeFitFinderCapture;
 
-  if (!extractor || document.getElementById("hff-capture-widget")) {
+  if (!extractor || !capture || document.getElementById("hff-capture-widget")) {
     return;
   }
 
@@ -25,12 +26,23 @@
 
   button.addEventListener("click", async () => {
     const stats = extractor.extractionStats(document);
-    const jobs = extractor.extractVisibleJobs(document, window.location.origin).map(stripDomReferences);
+    setStatus(status, "Scanning visible results...");
+    const captureResult = await capture.collectJobsAcrossScroll({
+      extractor,
+      root: document,
+      baseUrl: window.location.href,
+      onProgress: (snapshot) => {
+        setStatus(status, `Scanning pass ${snapshot.pass}: ${snapshot.totalJobs} job${snapshot.totalJobs === 1 ? "" : "s"}`);
+      },
+    });
+    const jobs = captureResult.jobs.map(stripDomReferences);
     writeDebug(debugOutput, {
       phase: "extracted",
       url: window.location.href,
       stats,
-      jobs: jobs.slice(0, 5),
+      passes: captureResult.passes,
+      snapshots: captureResult.snapshots,
+      jobs: jobs.slice(0, 8),
     });
     if (jobs.length === 0) {
       setStatus(status, `No visible jobs found (${stats.jobLinks} links, ${stats.jobCards} cards)`);
