@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Handshake Fit Finder",
+  "version": "0.1.4",
+  "description": "Capture visible Handshake jobs into your local Fit Finder dashboard.",
+  "permissions": ["activeTab"],
+  "host_permissions": [
+    "https://app.joinhandshake.com/*",
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://app.joinhandshake.com/*"],
+      "js": ["src/extractor.js", "src/capturePage.js", "src/content.js"],
+      "css": ["src/content.css"]
+    }
+  ]
+}

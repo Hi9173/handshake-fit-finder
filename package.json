@@ -1,0 +1,8 @@
+{
+  "name": "handshake-fit-finder",
+  "private": true,
+  "scripts": {
+    "web:dev": "pnpm --dir apps/web dev",
+    "web:build": "pnpm --dir apps/web build"
+  }
+}
