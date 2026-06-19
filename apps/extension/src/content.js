@@ -1,5 +1,5 @@
 (function initializeCaptureWidget() {
-  const API_URL = "http://127.0.0.1:8000/api/extension/capture";
+  const CAPTURE_MESSAGE = "HFF_CAPTURE_JOBS";
   const extractor = window.HandshakeFitFinderExtractor;
 
   if (!extractor || document.getElementById("hff-capture-widget")) {
@@ -39,15 +39,11 @@
 
     setStatus(status, `Capturing ${jobs.length} visible job${jobs.length === 1 ? "" : "s"}...`);
     try {
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobs }),
-      });
+      const response = await sendCaptureMessage(CAPTURE_MESSAGE, jobs);
       if (!response.ok) {
-        throw new Error(`Local API returned ${response.status}`);
+        throw new Error(response.error || "Extension background capture failed");
       }
-      const rankedJobs = await response.json();
+      const rankedJobs = response.jobs;
       writeDebug(debugOutput, {
         phase: "captured",
         sent: jobs.length,
@@ -66,6 +62,23 @@
     }
   });
 })();
+
+function sendCaptureMessage(type, jobs) {
+  if (!chrome?.runtime?.sendMessage) {
+    return Promise.reject(new Error("Chrome extension messaging is unavailable"));
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type, jobs }, (response) => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+      resolve(response || { ok: false, error: "No response from extension background worker" });
+    });
+  });
+}
 
 function stripDomReferences(job) {
   return {
