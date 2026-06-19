@@ -20,7 +20,7 @@ export type Job = {
 };
 
 export const defaultProfile = {
-  name: "Justin",
+  name: "Local Profile",
   targetRoles: ["Data Analyst", "Software Engineer"],
   skills: ["Python", "SQL", "React", "TypeScript", "Excel"],
   locations: ["Remote", "San Francisco", "New York"],

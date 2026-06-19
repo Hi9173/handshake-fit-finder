@@ -1,22 +1,22 @@
 # Handshake Fit Finder
 
-A private local job-fit dashboard for ranking Handshake postings against a user's resume, skills, and preferences.
+A local-first app that captures Handshake job search results from your browser session and shows them in a dashboard.
 
-## Current milestone
+## Current Scope
 
-- React + TypeScript dashboard in `apps/web`
-- FastAPI backend in `apps/api`
-- MySQL via Docker Compose
-- Deterministic fit scoring for captured jobs
-- Chrome extension scaffold in `apps/extension` for user-initiated visible job capture
+- Chrome extension captures the jobs available on the current Handshake results page.
+- FastAPI backend stores captured jobs and returns them to the app.
+- React dashboard displays captured jobs with a simple local fit score.
+- MySQL is available through Docker Compose for local persistence.
+
+This version focuses on reliable Handshake capture and a simple local dashboard.
 
 ## Local development
 
-The Codex workspace provides Node and pnpm at:
+Install frontend dependencies from the repo root:
 
 ```bash
-/Users/justin/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node
-/Users/justin/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm
+pnpm install
 ```
 
 Backend:
@@ -25,15 +25,13 @@ Backend:
 cd apps/api
 python3 -m venv .venv
 . .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
 Frontend:
 
 ```bash
-cd apps/web
-pnpm install
 pnpm dev
 ```
 
@@ -49,40 +47,12 @@ Chrome extension:
 2. Enable Developer mode.
 3. Click "Load unpacked".
 4. Select `apps/extension`.
-5. Open Handshake and search normally.
-6. Click "Capture visible jobs" in the Fit Finder widget.
+5. After code changes, click the extension reload icon and confirm the Fit Finder widget version matches `apps/extension/manifest.json`.
+6. Open Handshake and search normally.
+7. Click "Capture visible jobs" in the Fit Finder widget.
 
 The extension posts the visible job cards to `http://127.0.0.1:8000/api/extension/capture`.
 
-## Extension debugging automation
-
-The debug runner uses your normal Chrome profile through the Chrome DevTools Protocol.
-
-Start Chrome with a DevTools port:
-
-```bash
-open -na "Google Chrome" --args --remote-debugging-port=9222
-```
-
-Then run against a flexible Handshake URL:
-
-```bash
-pnpm debug:handshake -- --url "https://app.joinhandshake.com/job-search/10926674?query=neoboard&per_page=45&jobType=3&sort=relevance&page=1"
-```
-
-Or run against the currently open Handshake tab:
-
-```bash
-pnpm debug:handshake
-```
-
-The script attempts to reload the unpacked extension from `chrome://extensions`, refreshes/navigates the Handshake tab, clicks "Capture visible jobs", reads the widget debug JSON, captures console errors, and writes:
-
-- `debug-artifacts/latest.json`
-- `debug-artifacts/latest.png`
-
-If automatic extension reload cannot find the extension item, reload it manually in `chrome://extensions` or pass `--skip-extension-reload`.
-
 ## Compliance boundary
 
-The planned browser extension should assist a user's own browsing session. It should score visible jobs and user-selected job detail pages, not crawl Handshake, bypass access controls, call hidden APIs, or bulk collect marketplace data.
+The extension assists a user's own Handshake browsing session. It reads the jobs rendered in the user's browser page; it does not crawl Handshake, bypass access controls, call hidden APIs, or bulk collect marketplace data.

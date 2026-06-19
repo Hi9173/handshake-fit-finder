@@ -10,7 +10,7 @@
   const widget = document.createElement("div");
   widget.id = "hff-capture-widget";
   widget.innerHTML = `
-    <div class="hff-title">Fit Finder</div>
+    <div class="hff-title">Fit Finder ${getExtensionVersionLabel()}</div>
     <button type="button" id="hff-capture-button">Capture visible jobs</button>
     <div id="hff-capture-status" role="status">Ready</div>
     <details id="hff-capture-debug">
@@ -57,11 +57,16 @@
       }
       const rankedJobs = response.jobs;
       writeDebug(debugOutput, {
-        phase: "captured",
-        sent: jobs.length,
-        received: rankedJobs.length,
-        topScore: rankedJobs[0]?.fit?.score ?? null,
-      });
+      phase: "captured",
+      sent: jobs.length,
+      received: rankedJobs.length,
+      topScore: rankedJobs[0]?.fit?.score ?? null,
+      extraction: {
+        stats,
+        passes: captureResult.passes,
+        snapshots: captureResult.snapshots,
+      },
+    });
       applyScoreBadges(rankedJobs);
       setStatus(status, `Captured ${rankedJobs.length} job${rankedJobs.length === 1 ? "" : "s"}`);
     } catch (error) {
@@ -130,4 +135,9 @@ function setStatus(status, message) {
 
 function writeDebug(debugOutput, value) {
   debugOutput.textContent = JSON.stringify(value, null, 2);
+}
+
+function getExtensionVersionLabel() {
+  const version = chrome?.runtime?.getManifest?.().version;
+  return version ? `v${version}` : "";
 }

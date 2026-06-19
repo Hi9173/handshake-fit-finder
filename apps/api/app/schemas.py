@@ -13,7 +13,7 @@ class ApplicationStatus(str, Enum):
 
 class ProfileRead(BaseModel):
     id: int = 1
-    name: str = "Justin"
+    name: str = "Local Profile"
     target_roles: list[str] = Field(default_factory=lambda: ["data analyst", "software engineer"])
     skills: list[str] = Field(default_factory=lambda: ["python", "sql", "react", "typescript", "excel"])
     locations: list[str] = Field(default_factory=lambda: ["remote", "san francisco", "new york"])

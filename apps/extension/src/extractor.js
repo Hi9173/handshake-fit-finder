@@ -1,5 +1,6 @@
 (function attachExtractor(global) {
   const JOB_LINK_SELECTOR = 'a[href*="/stu/jobs/"], a[href*="/jobs/"]';
+  const SAVE_JOB_BUTTON_SELECTOR = 'button[aria-label^="Save "]';
   const JOB_CARD_SELECTOR = [
     "article",
     "li",
@@ -8,6 +9,7 @@
     '[data-testid*="job"]',
     '[data-hook*="job"]',
     '[class*="job"]',
+    "button[aria-label]",
   ].join(", ");
 
   function extractVisibleJobs(root, baseUrl) {
@@ -20,7 +22,13 @@
     const jobsFromCards = cards
       .map((card) => extractJobFromCard(card, baseUrl))
       .filter((job) => looksLikeJob(job));
-    return dedupeJobs([...jobsFromAnchors, ...jobsFromCards]);
+
+    const saveButtons = Array.from(root.querySelectorAll(SAVE_JOB_BUTTON_SELECTOR));
+    const jobsFromSaveButtons = saveButtons
+      .map((button) => extractJobFromSaveButton(button, baseUrl))
+      .filter((job) => looksLikeJob(job));
+
+    return dedupeJobs([...jobsFromAnchors, ...jobsFromCards, ...jobsFromSaveButtons]);
   }
 
   function extractJobFromAnchor(anchor, baseUrl) {
@@ -45,9 +53,21 @@
 
   function extractJobFromCard(card, baseUrl) {
     const link = typeof card.querySelector === "function" ? card.querySelector("a[href]") : null;
-    const lines = textLines(card ? card.textContent : "");
-    const title = cleanText(link ? link.textContent : "") || lines[0] || "Untitled job";
-    const company = firstDifferentLine(lines, title) || "Unknown company";
+    const ariaLabel = cleanText(typeof card.getAttribute === "function" ? card.getAttribute("aria-label") : "");
+    if (isActionButtonLabel(ariaLabel)) {
+      return {};
+    }
+    const logoAlt =
+      typeof card.querySelector === "function"
+        ? cleanText(card.querySelector("img[alt]")?.getAttribute("alt"))
+        : "";
+    const lines = textLines([ariaLabel, card ? card.textContent : ""].filter(Boolean).join("\n"));
+    const company = logoAlt || firstDifferentLine(lines, ariaLabel || lines[0]) || "Unknown company";
+    const title =
+      cleanText(link ? link.textContent : "") ||
+      titleFromAriaLabel(ariaLabel, company) ||
+      lines[0] ||
+      "Untitled job";
     const location = inferLocation(lines);
     const sourceUrl =
       absoluteUrl(link ? link.getAttribute("href") : "", baseUrl) ||
@@ -59,6 +79,25 @@
       location,
       description: lines.join("\n"),
       source_url: sourceUrl,
+      source: "handshake-extension",
+      card,
+    };
+  }
+
+  function extractJobFromSaveButton(button, baseUrl) {
+    const label = cleanText(typeof button.getAttribute === "function" ? button.getAttribute("aria-label") : "");
+    const title = cleanText(label.replace(/^Save\s+/i, ""));
+    const card = closestActionCard(button, title);
+    const cardText = cleanText(card ? card.textContent : "");
+    const company = inferCompanyFromCardText(cardText, title) || "Unknown company";
+    const location = inferLocation([cardText]);
+
+    return {
+      title,
+      company,
+      location,
+      description: cardText || title,
+      source_url: fallbackSourceUrl(baseUrl, title, company),
       source: "handshake-extension",
       card,
     };
@@ -93,6 +132,19 @@
     return anchor.closest("article, li, [data-test*='job'], [data-hook*='job'], div") || anchor;
   }
 
+  function closestActionCard(element, title) {
+    let current = element;
+    let best = null;
+    for (let depth = 0; current && depth < 8; depth += 1) {
+      const text = cleanText(current.textContent);
+      if (title && text.includes(title) && text.length > title.length && text.length < 600) {
+        best = current;
+      }
+      current = current.parentElement;
+    }
+    return best || element;
+  }
+
   function textLines(value) {
     return String(value || "")
       .split(/\n| {2,}/)
@@ -105,12 +157,48 @@
     return lines.find((line) => line.toLowerCase() !== normalizedTitle) || "";
   }
 
-  function inferLocation(lines) {
-    return (
-      lines.find((line) => /\b(remote|hybrid|onsite)\b/i.test(line)) ||
-      lines.find((line) => /,\s*[A-Z]{2}\b/.test(line)) ||
-      ""
+  function titleFromAriaLabel(label, company) {
+    if (!label || !company || !label.toLowerCase().startsWith(company.toLowerCase())) {
+      return "";
+    }
+    return cleanText(
+      label
+        .slice(company.length)
+        .replace(/\s+(?:unpaid|paid|\$[\d,]|posted\b|apply by\b|remote\b|hybrid\b|onsite\b|promoted\b|new\b).*/i, ""),
     );
+  }
+
+  function inferCompanyFromCardText(text, title) {
+    const index = text.indexOf(title);
+    if (index <= 0) {
+      return "";
+    }
+    const company = cleanText(text.slice(0, index));
+    return company.length <= 90 ? company : "";
+  }
+
+  function isActionButtonLabel(label) {
+    return /^(save|hide|clear|close|open|more actions|show more|apply|follow|first page|previous page|next page|last page)\b/i.test(
+      label,
+    );
+  }
+
+
+  function inferLocation(lines) {
+    for (const line of lines) {
+      const workMode = line.match(/(remote|hybrid|onsite)(?:\b|[∙·]|$)/i);
+      if (workMode) {
+        if (line.length <= 60) {
+          return line;
+        }
+        return `${workMode[1][0].toUpperCase()}${workMode[1].slice(1).toLowerCase()}`;
+      }
+      const cityState = line.match(/\b([A-Z][a-zA-Z .'-]+,\s*[A-Z]{2})\b/);
+      if (cityState) {
+        return cityState[1];
+      }
+    }
+    return "";
   }
 
   function absoluteUrl(href, baseUrl) {
@@ -149,6 +237,7 @@
     return {
       jobLinks: root.querySelectorAll(JOB_LINK_SELECTOR).length,
       jobCards: root.querySelectorAll(JOB_CARD_SELECTOR).length,
+      saveButtons: root.querySelectorAll(SAVE_JOB_BUTTON_SELECTOR).length,
     };
   }
 

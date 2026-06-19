@@ -8,7 +8,6 @@ import {
   Radar,
   Search,
   SlidersHorizontal,
-  Upload,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -150,10 +149,6 @@ export function App() {
         </section>
 
         <div className="button-stack">
-          <button className="primary-button" type="button" title="Upload resume">
-            <Upload size={16} aria-hidden="true" />
-            Upload resume
-          </button>
           <button className="secondary-button" type="button" title="Filter captured jobs">
             <Filter size={16} aria-hidden="true" />
             Filters

@@ -3,11 +3,6 @@
   "private": true,
   "scripts": {
     "web:dev": "pnpm --dir apps/web dev",
-    "web:build": "pnpm --dir apps/web build",
-    "extension:test": "pnpm --dir apps/extension test",
-    "debug:test": "node --test scripts/tests/*.test.mjs",
-    "debug:handshake": "node scripts/debug-handshake-extension.mjs",
-    "api:test": "cd apps/api && .venv/bin/python -m unittest tests/test_scoring.py tests/test_api.py",
-    "verify": "pnpm api:test && pnpm extension:test && pnpm debug:test && pnpm web:build"
+    "web:build": "pnpm --dir apps/web build"
   }
 }
