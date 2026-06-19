@@ -1,0 +1,417 @@
+:root {
+  color: #1d252c;
+  background: #eef2f3;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #f7f4ed;
+  border-right: 1px solid #d6d6ce;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+}
+
+.brand-row,
+.panel-heading,
+.job-title-row,
+.company-line,
+.job-actions,
+.search-box,
+.primary-button,
+.secondary-button {
+  align-items: center;
+  display: flex;
+}
+
+.brand-row {
+  gap: 12px;
+}
+
+.brand-mark {
+  align-items: center;
+  background: #235c67;
+  border-radius: 8px;
+  color: #ffffff;
+  display: grid;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.brand-row p,
+.eyebrow,
+.summary,
+.company-line,
+.definition-list,
+.metric span,
+.fit-column p {
+  color: #667078;
+}
+
+.panel {
+  border-top: 1px solid #dad7cd;
+  padding-top: 16px;
+}
+
+.panel-heading {
+  color: #26343b;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.panel-heading h2 {
+  font-size: 15px;
+}
+
+.profile-name {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-list span,
+.status-pill {
+  background: #e4ece7;
+  border: 1px solid #c9d9cf;
+  border-radius: 999px;
+  color: #234334;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 8px;
+}
+
+.definition-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.definition-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.definition-list dt {
+  color: #26343b;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.definition-list dd {
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.button-stack {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.primary-button,
+.secondary-button,
+.job-actions button,
+.job-actions a {
+  border-radius: 7px;
+  cursor: pointer;
+  gap: 8px;
+  justify-content: center;
+  min-height: 40px;
+  text-decoration: none;
+}
+
+.primary-button {
+  background: #235c67;
+  border: 1px solid #235c67;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.secondary-button,
+.job-actions button,
+.job-actions a {
+  background: #ffffff;
+  border: 1px solid #cbd3d5;
+  color: #243039;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+}
+
+.workspace-header {
+  align-items: end;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.workspace-header h2 {
+  font-size: 26px;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+
+.search-box {
+  background: #ffffff;
+  border: 1px solid #ccd5d8;
+  border-radius: 8px;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  width: min(360px, 100%);
+}
+
+.search-box input {
+  border: 0;
+  color: #1d252c;
+  min-width: 0;
+  outline: 0;
+  width: 100%;
+}
+
+.metrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+}
+
+.metric {
+  background: #ffffff;
+  border: 1px solid #d7dee0;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+}
+
+.metric strong {
+  font-size: 26px;
+}
+
+.job-list {
+  display: grid;
+  gap: 12px;
+}
+
+.job-card {
+  background: #ffffff;
+  border: 1px solid #d7dee0;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.job-main {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr auto;
+}
+
+.job-title-row {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.job-title-row h3 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.company-line {
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 6px;
+}
+
+.score-badge {
+  align-items: center;
+  border-radius: 8px;
+  display: grid;
+  justify-items: center;
+  min-height: 62px;
+  min-width: 76px;
+  padding: 8px;
+}
+
+.score-badge span {
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.score-badge small {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.score-badge.strong {
+  background: #d9eee4;
+  color: #12563e;
+}
+
+.score-badge.medium {
+  background: #fff0c2;
+  color: #684800;
+}
+
+.score-badge.weak {
+  background: #f7d7d0;
+  color: #842c21;
+}
+
+.summary {
+  line-height: 1.5;
+}
+
+.fit-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fit-column {
+  background: #f8faf9;
+  border: 1px solid #e0e6e5;
+  border-radius: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.fit-column h4 {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.fit-column ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fit-column li {
+  background: #ffffff;
+  border: 1px solid #dbe2e3;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 4px 7px;
+}
+
+.job-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.job-actions button,
+.job-actions a {
+  font-size: 14px;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-bottom: 1px solid #d6d6ce;
+    border-right: 0;
+  }
+
+  .workspace-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .metrics,
+  .fit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .workspace,
+  .sidebar {
+    padding: 16px;
+  }
+
+  .metrics,
+  .fit-grid,
+  .job-main {
+    grid-template-columns: 1fr;
+  }
+
+  .score-badge {
+    justify-items: start;
+  }
+}
