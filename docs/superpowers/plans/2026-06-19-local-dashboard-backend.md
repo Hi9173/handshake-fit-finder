@@ -4,7 +4,7 @@
 
 **Goal:** Build the first private local Handshake Fit Finder app with a React dashboard, FastAPI backend, MySQL data model, and deterministic job-fit scoring.
 
-**Architecture:** The backend owns scoring and persistence through focused services and SQLAlchemy models. The frontend consumes API-shaped sample data and presents the ranked job workflow that the future Chrome extension will feed.
+**Architecture:** The backend owns scoring and persistence through focused services and SQLAlchemy models. The frontend consumes captured API data and presents the ranked job workflow that the Chrome extension feeds.
 
 **Tech Stack:** FastAPI, SQLAlchemy, PyMySQL, MySQL 8.4, React, TypeScript, Vite, CSS modules/plain CSS, Docker Compose.
 
@@ -59,7 +59,7 @@
 - Create: `apps/web/src/main.tsx`
 - Create: `apps/web/src/App.tsx`
 - Create: `apps/web/src/styles.css`
-- Create: `apps/web/src/data/sampleJobs.ts`
+- Create: `apps/web/src/data/dashboardData.ts`
 
 - [ ] Build a dashboard around ranked job cards and fit breakdowns.
 - [ ] Include preference/profile summary and application pipeline metrics.
@@ -89,5 +89,5 @@
 - [ ] Add a user-clicked extension widget for visible job capture.
 - [ ] Add a batch capture API endpoint at `/api/extension/capture`.
 - [ ] Persist captured jobs and fit scores through SQLAlchemy.
-- [ ] Update the dashboard to fetch local API data before falling back to sample jobs.
+- [ ] Update the dashboard to fetch local API data and show an empty state before jobs are captured.
 - [ ] Verify backend tests, extension extractor tests, and frontend build.

@@ -270,6 +270,24 @@ h1 {
   padding: 18px;
 }
 
+.empty-state {
+  background: #ffffff;
+  border: 1px dashed #b7c3c6;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 22px;
+}
+
+.empty-state h3 {
+  font-size: 19px;
+}
+
+.empty-state p {
+  color: #667078;
+  line-height: 1.5;
+}
+
 .job-main {
   align-items: start;
   display: grid;

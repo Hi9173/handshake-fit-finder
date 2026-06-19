@@ -41,12 +41,42 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "ok"})
 
     def test_jobs_are_ranked_by_fit_score(self):
+        self.client.post(
+            "/api/extension/capture",
+            json={
+                "jobs": [
+                    {
+                        "title": "Entry Level Data Analyst",
+                        "company": "Bright Metrics",
+                        "location": "New York, NY",
+                        "description": "Analyze customer data with SQL, Python, Excel, and Tableau.",
+                        "source_url": "https://app.joinhandshake.com/stu/jobs/123",
+                        "source": "handshake-extension",
+                    },
+                    {
+                        "title": "Senior Backend Engineer",
+                        "company": "Scale Systems",
+                        "location": "Boston, MA",
+                        "description": "Senior onsite only role requiring 5+ years with Python and AWS.",
+                        "source_url": "https://app.joinhandshake.com/stu/jobs/456",
+                        "source": "handshake-extension",
+                    },
+                ]
+            },
+        )
+
         response = self.client.get("/api/jobs")
 
         self.assertEqual(response.status_code, 200)
         jobs = response.json()
         scores = [job["fit"]["score"] for job in jobs]
         self.assertEqual(scores, sorted(scores, reverse=True))
+
+    def test_jobs_are_empty_before_capture(self):
+        response = self.client.get("/api/jobs")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
 
     def test_capture_visible_jobs_scores_and_persists_them(self):
         response = self.client.post(

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import Base, get_db
 from app.models import FitScore, Job
-from app.sample_data import DEFAULT_PROFILE, ranked_sample_jobs
+from app.profile_data import DEFAULT_PROFILE
 from app.schemas import JobCaptureBatch, JobCreate, JobRead, ProfileRead
 from app.services.scoring import JobInput, ProfileInput, score_job
 
@@ -20,8 +20,6 @@ def get_profile() -> ProfileRead:
 def list_jobs(db: Session = Depends(get_db)) -> list[JobRead]:
     _ensure_schema(db)
     stored_jobs = db.scalars(select(Job).order_by(Job.created_at.desc())).all()
-    if not stored_jobs:
-        return ranked_sample_jobs()
     serialized = [_serialize_job(job) for job in stored_jobs if job.score is not None]
     return sorted(serialized, key=lambda item: item.fit.score, reverse=True)
 

@@ -82,6 +82,30 @@ test("extractVisibleJobs falls back to job-like cards without anchors", () => {
   assert.equal(jobs[0].source_url, "https://app.joinhandshake.com/stu/postings#product-data-analyst-northstar-analytics");
 });
 
+test("extractVisibleJobs combines link jobs with extra card jobs", () => {
+  const linkCard = fakeCard("Entry Level Data Analyst\nBright Metrics\nRemote", "/stu/jobs/123");
+  const cardOnly = {
+    textContent: "Operations Analyst\nCivic Systems\nChicago, IL",
+    querySelector: () => null,
+  };
+  const root = {
+    querySelectorAll: (selector) => {
+      if (selector.includes("a[")) {
+        return [linkCard.anchor];
+      }
+      return [linkCard, cardOnly];
+    },
+  };
+
+  const jobs = extractVisibleJobs(root, "https://app.joinhandshake.com/job-search/11070797");
+
+  assert.equal(jobs.length, 2);
+  assert.deepEqual(
+    jobs.map((job) => job.title),
+    ["Entry Level Data Analyst", "Operations Analyst"],
+  );
+});
+
 function fakeCard(textContent, href) {
   const title = textContent.split("\n")[0];
   const card = { textContent };

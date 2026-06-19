@@ -25,7 +25,7 @@ The dashboard or future extension sends job records to the backend. The backend 
 
 ## First Milestone
 
-The initial version ships with sample jobs, scoring tests, backend endpoints, MySQL configuration, and a usable dashboard shell. Real Handshake capture comes after the local app can store, rank, and explain jobs.
+The initial version ships with scoring tests, backend endpoints, MySQL configuration, a usable dashboard shell, and extension-driven capture. The dashboard shows an empty state until real jobs are captured from the user's browsing session.
 
 ## Testing
 

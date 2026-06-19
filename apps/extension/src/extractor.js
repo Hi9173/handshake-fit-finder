@@ -15,15 +15,12 @@
     const jobsFromAnchors = anchors
       .map((anchor) => extractJobFromAnchor(anchor, baseUrl))
       .filter((job) => job.title && job.company && job.source_url);
-    if (jobsFromAnchors.length > 0) {
-      return dedupeJobs(jobsFromAnchors);
-    }
 
     const cards = Array.from(root.querySelectorAll(JOB_CARD_SELECTOR));
     const jobsFromCards = cards
       .map((card) => extractJobFromCard(card, baseUrl))
       .filter((job) => looksLikeJob(job));
-    return dedupeJobs(jobsFromCards);
+    return dedupeJobs([...jobsFromAnchors, ...jobsFromCards]);
   }
 
   function extractJobFromAnchor(anchor, baseUrl) {
@@ -68,14 +65,23 @@
   }
 
   function dedupeJobs(jobs) {
-    const seen = new Set();
+    const seenSources = new Set();
+    const seenIdentities = new Set();
     const unique = [];
     for (const job of jobs) {
-      const key = job.source_url || `${job.title}:${job.company}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(job);
+      const sourceKey = job.source_url || "";
+      const identityKey = `${cleanText(job.title).toLowerCase()}:${cleanText(job.company).toLowerCase()}`;
+      if (sourceKey && seenSources.has(sourceKey)) {
+        continue;
       }
+      if (identityKey !== ":" && seenIdentities.has(identityKey)) {
+        continue;
+      }
+      if (sourceKey) {
+        seenSources.add(sourceKey);
+      }
+      seenIdentities.add(identityKey);
+      unique.push(job);
     }
     return unique;
   }
@@ -132,7 +138,7 @@
   }
 
   function looksLikeJob(job) {
-    if (!job.title || !job.company || job.title === job.company) {
+    if (!job.title || !job.company || job.company === "Unknown company" || job.title === job.company) {
       return false;
     }
     const text = `${job.title} ${job.company} ${job.location} ${job.description}`.toLowerCase();

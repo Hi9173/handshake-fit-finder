@@ -12,9 +12,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { jobs as sampleJobs, profile as sampleProfile, type Job, type JobStatus } from "./data/sampleJobs";
+import { defaultProfile, type Job, type JobStatus } from "./data/dashboardData";
 
-type Profile = typeof sampleProfile;
+type Profile = typeof defaultProfile;
 
 type ApiProfile = {
   name: string;
@@ -56,9 +56,9 @@ function scoreTone(score: number) {
 }
 
 export function App() {
-  const [profile, setProfile] = useState<Profile>(sampleProfile);
-  const [jobs, setJobs] = useState<Job[]>(sampleJobs);
-  const [dataSource, setDataSource] = useState("Sample data");
+  const [profile, setProfile] = useState<Profile>(defaultProfile);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [dataSource, setDataSource] = useState("Waiting for capture");
 
   useEffect(() => {
     let isMounted = true;
@@ -84,9 +84,9 @@ export function App() {
         }
       } catch (_error) {
         if (isMounted) {
-          setProfile(sampleProfile);
-          setJobs(sampleJobs);
-          setDataSource("Sample data");
+          setProfile(defaultProfile);
+          setJobs([]);
+          setDataSource("Local API unavailable");
         }
       }
     }
@@ -182,8 +182,14 @@ export function App() {
         </section>
 
         <section className="job-list" aria-label="Fit-ranked job list">
-          {sortedJobs.map((job) => (
-            <article className="job-card" key={job.id}>
+          {sortedJobs.length === 0 ? (
+            <article className="empty-state">
+              <h3>No captured jobs yet</h3>
+              <p>Open Handshake, reload the extension, and click Capture visible jobs to populate this dashboard.</p>
+            </article>
+          ) : (
+            sortedJobs.map((job) => (
+              <article className="job-card" key={job.id}>
               <div className="job-main">
                 <div>
                   <div className="job-title-row">
@@ -219,8 +225,9 @@ export function App() {
                 <button type="button">Save</button>
                 <button type="button">Mark applied</button>
               </div>
-            </article>
-          ))}
+              </article>
+            ))
+          )}
         </section>
       </section>
     </main>
