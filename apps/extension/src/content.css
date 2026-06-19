@@ -11,7 +11,7 @@
   position: fixed;
   right: 16px;
   top: 88px;
-  width: 190px;
+  width: 240px;
   z-index: 2147483647;
 }
 
@@ -36,6 +36,25 @@
   color: #667078;
   font-size: 12px;
   line-height: 1.35;
+}
+
+#hff-capture-debug {
+  color: #667078;
+  font-size: 11px;
+}
+
+#hff-capture-debug summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+#hff-capture-debug pre {
+  background: #f3f6f6;
+  border-radius: 6px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
 }
 
 .hff-score-badge {

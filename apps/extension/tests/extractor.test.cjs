@@ -59,6 +59,29 @@ test("extractVisibleJobs builds capture payloads from visible job links", () => 
   );
 });
 
+test("extractVisibleJobs falls back to job-like cards without anchors", () => {
+  const card = {
+    textContent: "Product Data Analyst\nNorthstar Analytics\nHybrid - Austin, TX",
+    querySelector: () => null,
+  };
+  const root = {
+    querySelectorAll: (selector) => {
+      if (selector.includes("a[")) {
+        return [];
+      }
+      return [card];
+    },
+  };
+
+  const jobs = extractVisibleJobs(root, "https://app.joinhandshake.com/stu/postings");
+
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].title, "Product Data Analyst");
+  assert.equal(jobs[0].company, "Northstar Analytics");
+  assert.equal(jobs[0].location, "Hybrid - Austin, TX");
+  assert.equal(jobs[0].source_url, "https://app.joinhandshake.com/stu/postings#product-data-analyst-northstar-analytics");
+});
+
 function fakeCard(textContent, href) {
   const title = textContent.split("\n")[0];
   const card = { textContent };

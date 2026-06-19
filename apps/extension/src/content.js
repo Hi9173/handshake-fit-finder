@@ -12,16 +12,28 @@
     <div class="hff-title">Fit Finder</div>
     <button type="button" id="hff-capture-button">Capture visible jobs</button>
     <div id="hff-capture-status" role="status">Ready</div>
+    <details id="hff-capture-debug">
+      <summary>Debug</summary>
+      <pre id="hff-capture-debug-output">No capture yet</pre>
+    </details>
   `;
   document.documentElement.appendChild(widget);
 
   const button = document.getElementById("hff-capture-button");
   const status = document.getElementById("hff-capture-status");
+  const debugOutput = document.getElementById("hff-capture-debug-output");
 
   button.addEventListener("click", async () => {
+    const stats = extractor.extractionStats(document);
     const jobs = extractor.extractVisibleJobs(document, window.location.origin).map(stripDomReferences);
+    writeDebug(debugOutput, {
+      phase: "extracted",
+      url: window.location.href,
+      stats,
+      jobs: jobs.slice(0, 5),
+    });
     if (jobs.length === 0) {
-      setStatus(status, "No visible jobs found");
+      setStatus(status, `No visible jobs found (${stats.jobLinks} links, ${stats.jobCards} cards)`);
       return;
     }
 
@@ -36,10 +48,20 @@
         throw new Error(`Local API returned ${response.status}`);
       }
       const rankedJobs = await response.json();
+      writeDebug(debugOutput, {
+        phase: "captured",
+        sent: jobs.length,
+        received: rankedJobs.length,
+        topScore: rankedJobs[0]?.fit?.score ?? null,
+      });
       applyScoreBadges(rankedJobs);
       setStatus(status, `Captured ${rankedJobs.length} job${rankedJobs.length === 1 ? "" : "s"}`);
     } catch (error) {
-      setStatus(status, "Start the local API on port 8000");
+      writeDebug(debugOutput, {
+        phase: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      setStatus(status, "Could not reach local API");
       console.error("[Handshake Fit Finder]", error);
     }
   });
@@ -79,4 +101,8 @@ function applyScoreBadges(rankedJobs) {
 
 function setStatus(status, message) {
   status.textContent = message;
+}
+
+function writeDebug(debugOutput, value) {
+  debugOutput.textContent = JSON.stringify(value, null, 2);
 }
