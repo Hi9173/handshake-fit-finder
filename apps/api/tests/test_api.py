@@ -34,6 +34,12 @@ class ApiTests(unittest.TestCase):
         Base.metadata.drop_all(bind=self.engine)
         self.engine.dispose()
 
+    def upload_data_resume(self):
+        return self.client.post(
+            "/api/profile/resume",
+            files={"file": ("resume.md", b"# Data Analyst\nPython SQL Excel Tableau\nRemote\n", "text/markdown")},
+        )
+
     def test_health_returns_ok(self):
         response = self.client.get("/health")
 
@@ -41,6 +47,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "ok"})
 
     def test_jobs_are_ranked_by_fit_score(self):
+        self.upload_data_resume()
         self.client.post(
             "/api/extension/capture",
             json={
@@ -78,7 +85,111 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), [])
 
+    def test_capture_scores_zero_before_resume_upload(self):
+        response = self.client.post(
+            "/api/extension/capture",
+            json={
+                "jobs": [
+                    {
+                        "title": "Entry Level Data Analyst",
+                        "company": "Bright Metrics",
+                        "location": "New York, NY",
+                        "description": "Analyze customer data with SQL, Python, Excel, and Tableau.",
+                        "source_url": "https://app.joinhandshake.com/stu/jobs/123",
+                        "source": "handshake-extension",
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        job = response.json()[0]
+        self.assertEqual(job["fit"]["score"], 0)
+        self.assertEqual(job["fit"]["matched_skills"], [])
+        self.assertEqual(job["fit"]["missing_skills"], [])
+        self.assertIn("Upload a resume", job["fit"]["summary"])
+
+    def test_resume_upload_extracts_profile_and_rescores_jobs(self):
+        self.client.post(
+            "/api/extension/capture",
+            json={
+                "jobs": [
+                    {
+                        "title": "Entry Level Data Analyst",
+                        "company": "Bright Metrics",
+                        "location": "Remote",
+                        "description": "Use SQL, Python, Excel, and Tableau to analyze customer data.",
+                        "source_url": "https://app.joinhandshake.com/stu/jobs/123",
+                        "source": "handshake-extension",
+                    }
+                ]
+            },
+        )
+
+        response = self.client.post(
+            "/api/profile/resume",
+            files={"file": ("resume.md", b"# Data Analyst\nPython SQL Excel Tableau\n", "text/markdown")},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        profile = response.json()
+        self.assertTrue(profile["has_resume"])
+        self.assertEqual(profile["resume_filename"], "resume.md")
+        self.assertIn("python", profile["skills"])
+
+        jobs = self.client.get("/api/jobs").json()
+        self.assertGreater(jobs[0]["fit"]["score"], 0)
+        self.assertIn("python", jobs[0]["fit"]["matched_skills"])
+
+    def test_resume_upload_rejects_unsupported_file_type(self):
+        response = self.client.post(
+            "/api/profile/resume",
+            files={"file": ("resume.docx", b"Python SQL", "application/octet-stream")},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(".pdf, .tex, or .md", response.json()["detail"])
+
+    def test_profile_update_rescores_existing_jobs(self):
+        self.client.post(
+            "/api/profile/resume",
+            files={"file": ("resume.md", b"# Software Engineer\nReact TypeScript\n", "text/markdown")},
+        )
+        self.client.post(
+            "/api/extension/capture",
+            json={
+                "jobs": [
+                    {
+                        "title": "Data Analyst",
+                        "company": "Bright Metrics",
+                        "location": "Remote",
+                        "description": "Use SQL and Python for reporting.",
+                        "source_url": "https://app.joinhandshake.com/stu/jobs/456",
+                        "source": "handshake-extension",
+                    }
+                ]
+            },
+        )
+        before = self.client.get("/api/jobs").json()[0]["fit"]["score"]
+
+        response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Local Profile",
+                "target_roles": ["data analyst"],
+                "skills": ["sql", "python"],
+                "locations": ["remote"],
+                "dealbreakers": [],
+                "seniority": "entry",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        after = self.client.get("/api/jobs").json()[0]["fit"]["score"]
+        self.assertGreater(after, before)
+
     def test_capture_visible_jobs_scores_and_persists_them(self):
+        self.upload_data_resume()
         response = self.client.post(
             "/api/extension/capture",
             json={
@@ -117,6 +228,7 @@ class ApiTests(unittest.TestCase):
         ])
 
     def test_capture_visible_jobs_updates_existing_job_by_source_url(self):
+        self.upload_data_resume()
         payload = {
             "jobs": [
                 {

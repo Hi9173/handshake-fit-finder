@@ -32,6 +32,7 @@ test("collectJobsAcrossScroll accumulates jobs from virtualized scroll snapshots
     maxPasses: 6,
     stablePasses: 1,
     wait: async () => {},
+    resetScroll: async () => {},
     scroll: async () => {
       pass += 1;
       return { moved: pass < snapshots.length };
@@ -58,6 +59,7 @@ test("collectJobsAcrossScroll stops after repeated stable snapshots", async () =
     maxPasses: 10,
     stablePasses: 2,
     wait: async () => {},
+    resetScroll: async () => {},
     scroll: async () => {
       scrollCalls += 1;
       return { moved: true };

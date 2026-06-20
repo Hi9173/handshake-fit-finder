@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -18,6 +19,18 @@ class ProfileRead(BaseModel):
     skills: list[str] = Field(default_factory=lambda: ["python", "sql", "react", "typescript", "excel"])
     locations: list[str] = Field(default_factory=lambda: ["remote", "san francisco", "new york"])
     dealbreakers: list[str] = Field(default_factory=lambda: ["unpaid", "onsite only"])
+    seniority: str = "entry"
+    resume_filename: str | None = None
+    resume_uploaded_at: datetime | None = None
+    has_resume: bool = False
+
+
+class ProfileUpdate(BaseModel):
+    name: str = "Local Profile"
+    target_roles: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    locations: list[str] = Field(default_factory=list)
+    dealbreakers: list[str] = Field(default_factory=list)
     seniority: str = "entry"
 
 

@@ -11,3 +11,4 @@ coverage/
 *.tsbuildinfo
 *.db
 debug-artifacts/
+apps/api/storage/

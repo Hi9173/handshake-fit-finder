@@ -1,54 +1,87 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, UploadFile
+from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.database import Base, get_db
-from app.models import FitScore, Job
-from app.profile_data import DEFAULT_PROFILE
-from app.schemas import JobCaptureBatch, JobCreate, JobRead, ProfileRead
-from app.services.scoring import JobInput, ProfileInput, score_job
+from app.models import FitScore, Job, Profile, utc_now
+from app.schemas import JobCaptureBatch, JobCreate, JobRead, ProfileRead, ProfileUpdate
+from app.services.profile_store import get_or_create_profile, has_resume, profile_input, zero_resume_score
+from app.services.resume_parser import parse_resume_upload
+from app.services.scoring import JobInput, score_job
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
 
 @router.get("/profile", response_model=ProfileRead)
-def get_profile() -> ProfileRead:
-    return DEFAULT_PROFILE
+def get_profile(db: Session = Depends(get_db)) -> ProfileRead:
+    _ensure_schema(db)
+    profile = get_or_create_profile(db)
+    db.commit()
+    return _serialize_profile(profile)
+
+
+@router.put("/profile", response_model=ProfileRead)
+def update_profile(update: ProfileUpdate, db: Session = Depends(get_db)) -> ProfileRead:
+    _ensure_schema(db)
+    profile = get_or_create_profile(db)
+    profile.name = update.name
+    profile.target_roles = update.target_roles
+    profile.skills = update.skills
+    profile.locations = update.locations
+    profile.dealbreakers = update.dealbreakers
+    profile.seniority = update.seniority
+    _rescore_all_jobs(db, profile)
+    db.commit()
+    db.refresh(profile)
+    return _serialize_profile(profile)
+
+
+@router.post("/profile/resume", response_model=ProfileRead)
+async def upload_resume(file: UploadFile, db: Session = Depends(get_db)) -> ProfileRead:
+    _ensure_schema(db)
+    profile = get_or_create_profile(db)
+    parsed = await parse_resume_upload(file)
+    profile.resume_filename = parsed.filename
+    profile.resume_path = parsed.path
+    profile.resume_text = parsed.text
+    profile.resume_uploaded_at = utc_now()
+    profile.target_roles = parsed.target_roles or profile.target_roles
+    profile.skills = parsed.skills
+    profile.locations = parsed.locations or profile.locations
+    profile.seniority = parsed.seniority
+    _rescore_all_jobs(db, profile)
+    db.commit()
+    db.refresh(profile)
+    return _serialize_profile(profile)
 
 
 @router.get("/jobs", response_model=list[JobRead])
 def list_jobs(db: Session = Depends(get_db)) -> list[JobRead]:
     _ensure_schema(db)
+    profile = get_or_create_profile(db)
     stored_jobs = db.scalars(select(Job).order_by(Job.created_at.desc())).all()
-    serialized = [_serialize_job(job) for job in stored_jobs if job.score is not None]
+    serialized = [_serialize_job(job, profile) for job in stored_jobs if job.score is not None]
     return sorted(serialized, key=lambda item: item.fit.score, reverse=True)
 
 
 @router.post("/jobs/score", response_model=JobRead)
-def score_new_job(job: JobCreate) -> JobRead:
-    profile = ProfileInput(
-        target_roles=DEFAULT_PROFILE.target_roles,
-        skills=DEFAULT_PROFILE.skills,
-        locations=DEFAULT_PROFILE.locations,
-        dealbreakers=DEFAULT_PROFILE.dealbreakers,
-        seniority=DEFAULT_PROFILE.seniority,
-    )
-    result = score_job(
-        profile,
-        JobInput(title=job.title, company=job.company, location=job.location, description=job.description),
-    )
+def score_new_job(job: JobCreate, db: Session = Depends(get_db)) -> JobRead:
+    _ensure_schema(db)
+    profile = get_or_create_profile(db)
+    result = _score_for_job(profile, job)
     return JobRead(id=999, **job.model_dump(), fit=result.__dict__)
 
 
 @router.post("/extension/capture", response_model=list[JobRead])
 def capture_visible_jobs(batch: JobCaptureBatch, db: Session = Depends(get_db)) -> list[JobRead]:
     _ensure_schema(db)
-    captured = [_upsert_job(db, job) for job in batch.jobs]
+    profile = get_or_create_profile(db)
+    captured = [_upsert_job(db, profile, job) for job in batch.jobs]
     db.commit()
-    return sorted((_serialize_job(job) for job in captured), key=lambda item: item.fit.score, reverse=True)
+    return sorted((_serialize_job(job, profile) for job in captured), key=lambda item: item.fit.score, reverse=True)
 
 
-def _upsert_job(db: Session, job_input: JobCreate) -> Job:
+def _upsert_job(db: Session, profile: Profile, job_input: JobCreate) -> Job:
     existing_job = _find_existing_job(db, job_input)
     if existing_job is None:
         existing_job = Job(
@@ -69,7 +102,7 @@ def _upsert_job(db: Session, job_input: JobCreate) -> Job:
         existing_job.source = job_input.source
 
     db.flush()
-    score = _score_for_job(job_input)
+    score = _score_for_job(profile, job_input)
     if existing_job.score is None:
         existing_job.score = FitScore(job_id=existing_job.id, **score.__dict__)
     else:
@@ -90,26 +123,59 @@ def _find_existing_job(db: Session, job_input: JobCreate) -> Job | None:
     return db.scalar(select(Job).where(Job.title == job_input.title, Job.company == job_input.company))
 
 
-def _score_for_job(job: JobCreate):
+def _score_for_job(profile: Profile, job: JobCreate):
+    if not has_resume(profile):
+        return zero_resume_score()
+
     return score_job(
-        _default_profile_input(),
+        profile_input(profile),
         JobInput(title=job.title, company=job.company, location=job.location, description=job.description),
     )
 
 
-def _default_profile_input() -> ProfileInput:
-    return ProfileInput(
-        target_roles=DEFAULT_PROFILE.target_roles,
-        skills=DEFAULT_PROFILE.skills,
-        locations=DEFAULT_PROFILE.locations,
-        dealbreakers=DEFAULT_PROFILE.dealbreakers,
-        seniority=DEFAULT_PROFILE.seniority,
+def _rescore_all_jobs(db: Session, profile: Profile) -> None:
+    jobs = db.scalars(select(Job)).all()
+    for job in jobs:
+        job_input = JobCreate(
+            title=job.title,
+            company=job.company,
+            location=job.location,
+            description=job.description,
+            source_url=job.source_url,
+            source=job.source,
+        )
+        score = _score_for_job(profile, job_input)
+        if job.score is None:
+            job.score = FitScore(job_id=job.id, **score.__dict__)
+        else:
+            job.score.score = score.score
+            job.score.matched_skills = score.matched_skills
+            job.score.missing_skills = score.missing_skills
+            job.score.role_matches = score.role_matches
+            job.score.penalties = score.penalties
+            job.score.summary = score.summary
+    db.flush()
+
+
+def _serialize_profile(profile: Profile) -> ProfileRead:
+    return ProfileRead(
+        id=profile.id,
+        name=profile.name,
+        target_roles=profile.target_roles or [],
+        skills=profile.skills or [],
+        locations=profile.locations or [],
+        dealbreakers=profile.dealbreakers or [],
+        seniority=profile.seniority or "entry",
+        resume_filename=profile.resume_filename,
+        resume_uploaded_at=profile.resume_uploaded_at,
+        has_resume=has_resume(profile),
     )
 
 
-def _serialize_job(job: Job) -> JobRead:
+def _serialize_job(job: Job, profile: Profile) -> JobRead:
     if job.score is None:
         score = _score_for_job(
+            profile,
             JobCreate(
                 title=job.title,
                 company=job.company,
@@ -144,3 +210,21 @@ def _serialize_job(job: Job) -> JobRead:
 
 def _ensure_schema(db: Session) -> None:
     Base.metadata.create_all(bind=db.get_bind())
+    _ensure_profile_resume_columns(db)
+
+
+def _ensure_profile_resume_columns(db: Session) -> None:
+    inspector = inspect(db.get_bind())
+    if "profiles" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("profiles")}
+    missing_columns = {
+        "resume_filename": "VARCHAR(255)",
+        "resume_path": "VARCHAR(1000)",
+        "resume_text": "TEXT",
+        "resume_uploaded_at": "DATETIME",
+    }
+    for name, column_type in missing_columns.items():
+        if name not in columns:
+            db.execute(text(f"ALTER TABLE profiles ADD COLUMN {name} {column_type}"))
