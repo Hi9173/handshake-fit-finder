@@ -33,13 +33,13 @@ async def parse_resume_upload(file: UploadFile) -> ParsedResume:
     if not content:
         raise HTTPException(status_code=400, detail="Resume file is empty.")
 
-    RESUME_DIR.mkdir(parents=True, exist_ok=True)
-    path = RESUME_DIR / filename
-    path.write_bytes(content)
-
     text = _extract_text(content, extension).strip()
     if not text:
         raise HTTPException(status_code=400, detail="Could not extract text from resume.")
+
+    RESUME_DIR.mkdir(parents=True, exist_ok=True)
+    path = RESUME_DIR / filename
+    path.write_bytes(content)
 
     return ParsedResume(
         filename=filename,

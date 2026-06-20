@@ -50,3 +50,52 @@ Good interview framing:
 - This is a clean example of debugging environment drift across app config, database service, and local machine state.
 - The fix avoided resetting a global database service and instead isolated the project database in Docker.
 - The project still uses MySQL, but local development is now reproducible even when another MySQL server owns port `3306`.
+
+## Capture 500 From Handshake Filter Text
+
+Problem:
+
+- The extension reached the local API, but the API returned `500 Internal Server Error`.
+- The backend traceback showed MySQL error `Data too long for column 'company'`.
+- The captured payload included a fake job titled `Job search filters`; Handshake's search/filter UI text had been interpreted as a job card.
+
+Root cause:
+
+- The extractor intentionally used broad DOM selectors so it could work with Handshake's changing markup.
+- That flexibility also allowed non-job UI with job-related words, such as filters and suggested searches, to pass the "looks like a job" heuristic.
+- The backend trusted extension input and wrote strings directly into `VARCHAR` columns, so one bad capture could fail the whole batch.
+
+Solution:
+
+- Tighten the extension heuristic so search/filter panels are ignored and suspiciously long title/company values are rejected before capture.
+- Add backend input clamping for persisted fields such as title, company, location, source URL, and source.
+- Bump the extension version to make reload verification obvious in Chrome.
+
+Good interview framing:
+
+- This bug is a useful example of defense in depth: browser extraction should be accurate, but the backend still has to protect its persistence boundary.
+- The fix kept the scraper lightweight and compliant while making the local API resilient to messy page text.
+- The debugging path followed the real data flow: extension payload -> API route -> ORM flush -> MySQL column constraint.
+
+## Resume Upload Checkpoint Scan
+
+Problem:
+
+- The app advertised `.pdf`, `.tex`, and `.md` resume uploads, but PDF parsing depended on `pypdf`, which was not listed in API requirements.
+- Resume files were written to local storage before text extraction completed.
+
+Root cause:
+
+- The parser handled missing `pypdf` at runtime, but the dependency was never promoted into install requirements.
+- The write order optimized for simplicity, but it meant a failed upload with the same filename could overwrite the current local resume file.
+
+Solution:
+
+- Pin `pypdf` in `apps/api/requirements.txt` so PDF upload support installs with the backend.
+- Extract text first, then write the file only after parsing succeeds.
+- Add a regression test proving failed resume uploads do not overwrite the existing stored file.
+
+Good interview framing:
+
+- This is a checkpoint-quality bug because it connects user trust, local privacy, and failure handling.
+- The fix is intentionally small: no file versioning system yet, just preserving the current file unless the replacement is valid.

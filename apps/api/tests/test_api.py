@@ -1,4 +1,7 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -150,6 +153,21 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn(".pdf, .tex, or .md", response.json()["detail"])
 
+    def test_failed_resume_upload_does_not_overwrite_current_file(self):
+        with TemporaryDirectory() as directory:
+            resume_dir = Path(directory)
+            current_file = resume_dir / "resume.pdf"
+            current_file.write_bytes(b"current resume bytes")
+
+            with patch("app.services.resume_parser.RESUME_DIR", resume_dir):
+                response = self.client.post(
+                    "/api/profile/resume",
+                    files={"file": ("resume.pdf", b"not a real pdf", "application/pdf")},
+                )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(current_file.read_bytes(), b"current resume bytes")
+
     def test_profile_update_rescores_existing_jobs(self):
         self.client.post(
             "/api/profile/resume",
@@ -252,6 +270,29 @@ class ApiTests(unittest.TestCase):
         jobs = self.client.get("/api/jobs").json()
         self.assertEqual(len(jobs), 1)
         self.assertIn("python", jobs[0]["fit"]["matched_skills"])
+
+    def test_capture_visible_jobs_clamps_overlong_page_text(self):
+        long_company = "Suggested for you" + (" Backend Software Engineer" * 20)
+        response = self.client.post(
+            "/api/extension/capture",
+            json={
+                "jobs": [
+                    {
+                        "title": "Job search filters",
+                        "company": long_company,
+                        "location": "Suggested for you Backend Software Engineer roles in San Diego, CA",
+                        "description": "SQL Python analytics",
+                        "source_url": "https://app.joinhandshake.com/job-search/10926674#job-search-filters",
+                        "source": "handshake-extension",
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        job = response.json()[0]
+        self.assertLessEqual(len(job["company"]), 255)
+        self.assertLessEqual(len(job["location"]), 255)
 
 
 if __name__ == "__main__":

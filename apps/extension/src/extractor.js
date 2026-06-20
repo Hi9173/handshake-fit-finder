@@ -229,8 +229,21 @@
     if (!job.title || !job.company || job.company === "Unknown company" || job.title === job.company) {
       return false;
     }
+    if (job.title.length > 160 || job.company.length > 120 || isSearchChrome(job)) {
+      return false;
+    }
     const text = `${job.title} ${job.company} ${job.location} ${job.description}`.toLowerCase();
     return /\b(job|intern|analyst|engineer|developer|associate|specialist|manager|remote|hybrid|onsite)\b/.test(text);
+  }
+
+  function isSearchChrome(job) {
+    const title = cleanText(job.title).toLowerCase();
+    const description = cleanText(job.description).toLowerCase();
+    return (
+      /^(job search filters|filters|suggested for you|search results)$/.test(title) ||
+      (description.includes("job search filters") && description.includes("filters")) ||
+      /\b\d+\/300\d* of 300 characters used\b/.test(description)
+    );
   }
 
   function extractionStats(root) {

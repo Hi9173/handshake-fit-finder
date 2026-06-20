@@ -6,10 +6,11 @@ A local-first app that captures Handshake job search results from your browser s
 
 - Chrome extension captures the jobs available on the current Handshake results page.
 - FastAPI backend stores captured jobs and returns them to the app.
-- React dashboard displays captured jobs with a simple local fit score.
+- React dashboard displays captured jobs with local resume-based fit scores.
+- Resume upload supports `.md`, `.tex`, and `.pdf` files, stores the resume locally, and extracts an editable profile.
 - MySQL is available through Docker Compose for local persistence.
 
-This version focuses on reliable Handshake capture and a simple local dashboard.
+This version focuses on reliable Handshake capture, local persistence, and local resume-based scoring.
 
 ## Local development
 

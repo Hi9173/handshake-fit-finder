@@ -11,6 +11,12 @@ from app.services.scoring import JobInput, score_job
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
+MAX_TITLE_LENGTH = 255
+MAX_COMPANY_LENGTH = 255
+MAX_LOCATION_LENGTH = 255
+MAX_SOURCE_URL_LENGTH = 1000
+MAX_SOURCE_LENGTH = 80
+
 
 @router.get("/profile", response_model=ProfileRead)
 def get_profile(db: Session = Depends(get_db)) -> ProfileRead:
@@ -82,6 +88,7 @@ def capture_visible_jobs(batch: JobCaptureBatch, db: Session = Depends(get_db)) 
 
 
 def _upsert_job(db: Session, profile: Profile, job_input: JobCreate) -> Job:
+    job_input = _sanitize_job_input(job_input)
     existing_job = _find_existing_job(db, job_input)
     if existing_job is None:
         existing_job = Job(
@@ -115,6 +122,22 @@ def _upsert_job(db: Session, profile: Profile, job_input: JobCreate) -> Job:
 
     db.flush()
     return existing_job
+
+
+def _sanitize_job_input(job_input: JobCreate) -> JobCreate:
+    return job_input.model_copy(
+        update={
+            "title": _clamp(job_input.title, MAX_TITLE_LENGTH),
+            "company": _clamp(job_input.company, MAX_COMPANY_LENGTH),
+            "location": _clamp(job_input.location, MAX_LOCATION_LENGTH),
+            "source_url": _clamp(job_input.source_url, MAX_SOURCE_URL_LENGTH) if job_input.source_url else None,
+            "source": _clamp(job_input.source, MAX_SOURCE_LENGTH),
+        }
+    )
+
+
+def _clamp(value: str, limit: int) -> str:
+    return value.strip()[:limit]
 
 
 def _find_existing_job(db: Session, job_input: JobCreate) -> Job | None:

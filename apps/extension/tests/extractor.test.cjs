@@ -106,6 +106,26 @@ test("extractVisibleJobs combines link jobs with extra card jobs", () => {
   );
 });
 
+test("extractVisibleJobs ignores Handshake search filter panels", () => {
+  const filterPanel = {
+    textContent:
+      "Job search filters\nSuggested for youRefreshBackend Software Engineer roles in San Diego, CA focusing on scalable systems and distributed computing\nneoboard8/3008 of 300 characters used\nUCSD collections\nLocation\nFull-time job\nInternship\nPart time\nFilters1",
+    querySelector: () => null,
+  };
+  const root = {
+    querySelectorAll: (selector) => {
+      if (selector.includes("a[")) {
+        return [];
+      }
+      return [filterPanel];
+    },
+  };
+
+  const jobs = extractVisibleJobs(root, "https://app.joinhandshake.com/job-search/10926674");
+
+  assert.equal(jobs.length, 0);
+});
+
 function fakeCard(textContent, href) {
   const title = textContent.split("\n")[0];
   const card = { textContent };
