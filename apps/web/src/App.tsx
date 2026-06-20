@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   ExternalLink,
   FileText,
-  Filter,
   MapPin,
   Radar,
   Save,
@@ -68,6 +67,7 @@ export function App() {
   const [dataSource, setDataSource] = useState("Waiting for capture");
   const [notice, setNotice] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -183,7 +183,19 @@ export function App() {
     }
   }
 
-  const sortedJobs = useMemo(() => [...jobs].sort((a, b) => b.fit.score - a.fit.score), [jobs]);
+  const filteredJobs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return jobs;
+    }
+    return jobs.filter((job) =>
+      [job.title, job.company, job.location, job.fit.summary, ...job.fit.matchedSkills, ...job.fit.missingSkills]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [jobs, searchQuery]);
+  const sortedJobs = useMemo(() => [...filteredJobs].sort((a, b) => b.fit.score - a.fit.score), [filteredJobs]);
   const averageScore = Math.round(jobs.reduce((total, job) => total + job.fit.score, 0) / Math.max(jobs.length, 1));
   const savedCount = jobs.filter((job) => job.status === "saved").length;
   const cautionCount = jobs.filter((job) => job.fit.penalties.length > 0).length;
@@ -290,13 +302,6 @@ export function App() {
             </div>
           </dl>
         </section>
-
-        <div className="button-stack">
-          <button className="secondary-button" type="button" title="Filter captured jobs">
-            <Filter size={16} aria-hidden="true" />
-            Filters
-          </button>
-        </div>
       </aside>
 
       <section className="workspace" aria-label="Ranked jobs">
@@ -308,7 +313,12 @@ export function App() {
           </div>
           <label className="search-box">
             <Search size={17} aria-hidden="true" />
-            <input aria-label="Search jobs" placeholder="Search title, company, skill" />
+            <input
+              aria-label="Search jobs"
+              placeholder="Search title, company, skill"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
           </label>
         </header>
 
@@ -322,8 +332,12 @@ export function App() {
         <section className="job-list" aria-label="Fit-ranked job list">
           {sortedJobs.length === 0 ? (
             <article className="empty-state">
-              <h3>No captured jobs yet</h3>
-              <p>Open Handshake, reload the extension, and click Capture visible jobs to populate this dashboard.</p>
+              <h3>{jobs.length === 0 ? "No captured jobs yet" : "No matching jobs"}</h3>
+              <p>
+                {jobs.length === 0
+                  ? "Open Handshake, reload the extension, and click Capture visible jobs to populate this dashboard."
+                  : "Clear or change the search query to see more captured jobs."}
+              </p>
             </article>
           ) : (
             sortedJobs.map((job) => (
@@ -360,8 +374,6 @@ export function App() {
                   <ExternalLink size={15} aria-hidden="true" />
                   Open source
                 </a>
-                <button type="button">Save</button>
-                <button type="button">Mark applied</button>
               </div>
               </article>
             ))
