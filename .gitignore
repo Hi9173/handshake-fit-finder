@@ -12,3 +12,7 @@ coverage/
 *.db
 debug-artifacts/
 apps/api/storage/
+apps/api/.mysql-data/
+apps/api/*.sock
+apps/api/*.pid
+apps/api/*.err

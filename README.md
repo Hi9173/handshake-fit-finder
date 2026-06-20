@@ -38,7 +38,15 @@ pnpm dev
 Database:
 
 ```bash
-docker compose up mysql
+docker compose up -d mysql
+```
+
+Requires Docker Desktop to be installed and running.
+
+The Docker MySQL container is exposed on host port `3307` to avoid conflicts with any MySQL already installed on your Mac. The API default database URL is:
+
+```text
+mysql+pymysql://handshake:handshake@127.0.0.1:3307/handshake_fit_finder
 ```
 
 Chrome extension:
