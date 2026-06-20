@@ -25,4 +25,8 @@ export const defaultProfile = {
   skills: ["Python", "SQL", "React", "TypeScript", "Excel"],
   locations: ["Remote", "San Francisco", "New York"],
   dealbreakers: ["Unpaid", "Onsite only"],
+  seniority: "entry",
+  resumeFilename: null as string | null,
+  resumeUploadedAt: null as string | null,
+  hasResume: false,
 };

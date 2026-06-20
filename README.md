@@ -6,10 +6,11 @@ A local-first app that captures Handshake job search results from your browser s
 
 - Chrome extension captures the jobs available on the current Handshake results page.
 - FastAPI backend stores captured jobs and returns them to the app.
-- React dashboard displays captured jobs with a simple local fit score.
+- React dashboard displays captured jobs with local resume-based fit scores.
+- Resume upload supports `.md`, `.tex`, and `.pdf` files, stores the resume locally, and extracts an editable profile.
 - MySQL is available through Docker Compose for local persistence.
 
-This version focuses on reliable Handshake capture and a simple local dashboard.
+This version focuses on reliable Handshake capture, local persistence, and local resume-based scoring.
 
 ## Local development
 
@@ -38,7 +39,15 @@ pnpm dev
 Database:
 
 ```bash
-docker compose up mysql
+docker compose up -d mysql
+```
+
+Requires Docker Desktop to be installed and running.
+
+The Docker MySQL container is exposed on host port `3307` to avoid conflicts with any MySQL already installed on your Mac. The API default database URL is:
+
+```text
+mysql+pymysql://handshake:handshake@127.0.0.1:3307/handshake_fit_finder
 ```
 
 Chrome extension:

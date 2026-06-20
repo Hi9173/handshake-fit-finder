@@ -29,6 +29,10 @@ class Profile(Base):
     locations: Mapped[list[str]] = mapped_column(JSON, default=list)
     dealbreakers: Mapped[list[str]] = mapped_column(JSON, default=list)
     seniority: Mapped[str] = mapped_column(String(50), default="entry")
+    resume_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resume_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    resume_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resume_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 

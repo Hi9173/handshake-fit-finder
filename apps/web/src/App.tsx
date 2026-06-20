@@ -3,13 +3,16 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   ExternalLink,
+  FileText,
   Filter,
   MapPin,
   Radar,
+  Save,
   Search,
   SlidersHorizontal,
+  Upload,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
 import { defaultProfile, type Job, type JobStatus } from "./data/dashboardData";
 
@@ -21,6 +24,10 @@ type ApiProfile = {
   skills: string[];
   locations: string[];
   dealbreakers: string[];
+  seniority: string;
+  resume_filename: string | null;
+  resume_uploaded_at: string | null;
+  has_resume: boolean;
 };
 
 type ApiJob = {
@@ -56,8 +63,11 @@ function scoreTone(score: number) {
 
 export function App() {
   const [profile, setProfile] = useState<Profile>(defaultProfile);
+  const [profileDraft, setProfileDraft] = useState(profileToDraft(defaultProfile));
   const [jobs, setJobs] = useState<Job[]>([]);
   const [dataSource, setDataSource] = useState("Waiting for capture");
+  const [notice, setNotice] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -77,7 +87,9 @@ export function App() {
         ])) as [ApiProfile, ApiJob[]];
 
         if (isMounted) {
-          setProfile(mapProfile(apiProfile));
+          const mappedProfile = mapProfile(apiProfile);
+          setProfile(mappedProfile);
+          setProfileDraft(profileToDraft(mappedProfile));
           setJobs(apiJobs.map(mapJob));
           setDataSource("Local API");
         }
@@ -95,6 +107,81 @@ export function App() {
       isMounted = false;
     };
   }, []);
+
+  async function refreshDashboardData() {
+    const [profileResponse, jobsResponse] = await Promise.all([
+      fetch("http://127.0.0.1:8000/api/profile"),
+      fetch("http://127.0.0.1:8000/api/jobs"),
+    ]);
+    if (!profileResponse.ok || !jobsResponse.ok) {
+      throw new Error("Local API unavailable");
+    }
+    const [apiProfile, apiJobs] = (await Promise.all([
+      profileResponse.json(),
+      jobsResponse.json(),
+    ])) as [ApiProfile, ApiJob[]];
+    const mappedProfile = mapProfile(apiProfile);
+    setProfile(mappedProfile);
+    setProfileDraft(profileToDraft(mappedProfile));
+    setJobs(apiJobs.map(mapJob));
+    setDataSource("Local API");
+  }
+
+  async function uploadResume(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsSaving(true);
+    setNotice("Processing resume...");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("http://127.0.0.1:8000/api/profile/resume", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshDashboardData();
+      setNotice("Resume saved. Jobs were rescored.");
+    } catch (_error) {
+      setNotice("Resume upload failed.");
+    } finally {
+      setIsSaving(false);
+      event.target.value = "";
+    }
+  }
+
+  async function saveProfile() {
+    setIsSaving(true);
+    setNotice("Saving profile...");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profileDraft.name.trim() || "Local Profile",
+          target_roles: splitTerms(profileDraft.targetRoles),
+          skills: splitTerms(profileDraft.skills),
+          locations: splitTerms(profileDraft.locations),
+          dealbreakers: splitTerms(profileDraft.dealbreakers),
+          seniority: profileDraft.seniority.trim() || "entry",
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshDashboardData();
+      setNotice("Profile saved. Jobs were rescored.");
+    } catch (_error) {
+      setNotice("Profile save failed.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   const sortedJobs = useMemo(() => [...jobs].sort((a, b) => b.fit.score - a.fit.score), [jobs]);
   const averageScore = Math.round(jobs.reduce((total, job) => total + job.fit.score, 0) / Math.max(jobs.length, 1));
@@ -114,16 +201,54 @@ export function App() {
           </div>
         </div>
 
+        <section className="panel resume-panel">
+          <div className="panel-heading">
+            <FileText size={18} aria-hidden="true" />
+            <h2>Resume</h2>
+          </div>
+          <p className={profile.hasResume ? "resume-status ready" : "resume-status"}>
+            {profile.hasResume ? profile.resumeFilename : "Upload a resume to calculate fit scores."}
+          </p>
+          {profile.resumeUploadedAt ? <p className="resume-date">{formatDate(profile.resumeUploadedAt)}</p> : null}
+          <label className="upload-control">
+            <Upload size={16} aria-hidden="true" />
+            <span>{profile.hasResume ? "Replace resume" : "Upload resume"}</span>
+            <input type="file" accept=".pdf,.tex,.md" disabled={isSaving} onChange={uploadResume} />
+          </label>
+          {notice ? <p className="form-notice">{notice}</p> : null}
+        </section>
+
         <section className="panel">
           <div className="panel-heading">
             <BriefcaseBusiness size={18} aria-hidden="true" />
             <h2>Profile</h2>
           </div>
-          <p className="profile-name">{profile.name}</p>
-          <div className="tag-list">
-            {profile.targetRoles.map((role) => (
-              <span key={role}>{role}</span>
-            ))}
+          <div className="profile-form">
+            <label className="text-field">
+              <span>Name</span>
+              <input
+                value={profileDraft.name}
+                onChange={(event) => setProfileDraft({ ...profileDraft, name: event.target.value })}
+              />
+            </label>
+            <label className="text-field">
+              <span>Target roles</span>
+              <input
+                value={profileDraft.targetRoles}
+                onChange={(event) => setProfileDraft({ ...profileDraft, targetRoles: event.target.value })}
+              />
+            </label>
+            <label className="text-field">
+              <span>Skills</span>
+              <input
+                value={profileDraft.skills}
+                onChange={(event) => setProfileDraft({ ...profileDraft, skills: event.target.value })}
+              />
+            </label>
+            <button className="primary-button" type="button" disabled={isSaving} onClick={saveProfile}>
+              <Save size={16} aria-hidden="true" />
+              Save profile
+            </button>
           </div>
         </section>
 
@@ -135,15 +260,33 @@ export function App() {
           <dl className="definition-list">
             <div>
               <dt>Locations</dt>
-              <dd>{profile.locations.join(", ")}</dd>
+              <dd>
+                <input
+                  className="inline-input"
+                  value={profileDraft.locations}
+                  onChange={(event) => setProfileDraft({ ...profileDraft, locations: event.target.value })}
+                />
+              </dd>
             </div>
             <div>
-              <dt>Skills</dt>
-              <dd>{profile.skills.join(", ")}</dd>
+              <dt>Seniority</dt>
+              <dd>
+                <input
+                  className="inline-input"
+                  value={profileDraft.seniority}
+                  onChange={(event) => setProfileDraft({ ...profileDraft, seniority: event.target.value })}
+                />
+              </dd>
             </div>
             <div>
               <dt>Dealbreakers</dt>
-              <dd>{profile.dealbreakers.join(", ")}</dd>
+              <dd>
+                <input
+                  className="inline-input"
+                  value={profileDraft.dealbreakers}
+                  onChange={(event) => setProfileDraft({ ...profileDraft, dealbreakers: event.target.value })}
+                />
+              </dd>
             </div>
           </dl>
         </section>
@@ -236,6 +379,10 @@ function mapProfile(profile: ApiProfile): Profile {
     skills: profile.skills,
     locations: profile.locations,
     dealbreakers: profile.dealbreakers,
+    seniority: profile.seniority,
+    resumeFilename: profile.resume_filename,
+    resumeUploadedAt: profile.resume_uploaded_at,
+    hasResume: profile.has_resume,
   };
 }
 
@@ -256,6 +403,28 @@ function mapJob(job: ApiJob): Job {
       summary: job.fit.summary,
     },
   };
+}
+
+function profileToDraft(profile: Profile) {
+  return {
+    name: profile.name,
+    targetRoles: profile.targetRoles.join(", "),
+    skills: profile.skills.join(", "),
+    locations: profile.locations.join(", "),
+    dealbreakers: profile.dealbreakers.join(", "),
+    seniority: profile.seniority,
+  };
+}
+
+function splitTerms(value: string) {
+  return value
+    .split(",")
+    .map((term) => term.trim())
+    .filter(Boolean);
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

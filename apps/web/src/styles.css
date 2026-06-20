@@ -113,6 +113,81 @@ h1 {
   margin-bottom: 10px;
 }
 
+.resume-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.resume-status {
+  color: #7a3128;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.resume-status.ready {
+  color: #12563e;
+}
+
+.resume-date,
+.form-notice {
+  color: #667078;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.upload-control {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #cbd3d5;
+  border-radius: 7px;
+  color: #243039;
+  cursor: pointer;
+  display: flex;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 40px;
+  overflow: hidden;
+  position: relative;
+}
+
+.upload-control input {
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+}
+
+.profile-form {
+  display: grid;
+  gap: 10px;
+}
+
+.text-field {
+  display: grid;
+  gap: 5px;
+}
+
+.text-field span {
+  color: #26343b;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.text-field input,
+.inline-input {
+  background: #ffffff;
+  border: 1px solid #cbd3d5;
+  border-radius: 7px;
+  color: #1d252c;
+  min-height: 36px;
+  min-width: 0;
+  outline: 0;
+  padding: 7px 9px;
+  width: 100%;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
@@ -177,6 +252,12 @@ h1 {
   border: 1px solid #235c67;
   color: #ffffff;
   font-weight: 800;
+}
+
+.primary-button:disabled,
+.upload-control:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .secondary-button,
