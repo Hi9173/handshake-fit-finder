@@ -28,6 +28,8 @@ class Profile(Base):
     skills: Mapped[list[str]] = mapped_column(JSON, default=list)
     locations: Mapped[list[str]] = mapped_column(JSON, default=list)
     dealbreakers: Mapped[list[str]] = mapped_column(JSON, default=list)
+    resume_characteristics: Mapped[list[str]] = mapped_column(JSON, default=list)
+    user_characteristics: Mapped[list[str]] = mapped_column(JSON, default=list)
     seniority: Mapped[str] = mapped_column(String(50), default="entry")
     resume_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     resume_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)

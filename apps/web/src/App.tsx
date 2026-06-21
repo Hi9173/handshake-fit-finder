@@ -1,15 +1,11 @@
 import {
   AlertTriangle,
-  BriefcaseBusiness,
   CheckCircle2,
   ExternalLink,
   FileText,
-  Filter,
-  MapPin,
   Radar,
-  Save,
   Search,
-  SlidersHorizontal,
+  Sparkles,
   Upload,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
@@ -24,6 +20,9 @@ type ApiProfile = {
   skills: string[];
   locations: string[];
   dealbreakers: string[];
+  resume_characteristics: string[];
+  user_characteristics: string[];
+  characteristics: string[];
   seniority: string;
   resume_filename: string | null;
   resume_uploaded_at: string | null;
@@ -35,6 +34,7 @@ type ApiJob = {
   title: string;
   company: string;
   location: string;
+  description: string;
   source_url: string;
   status: JobStatus;
   fit: {
@@ -47,14 +47,6 @@ type ApiJob = {
   };
 };
 
-const statusLabels: Record<Job["status"], string> = {
-  captured: "Captured",
-  saved: "Saved",
-  applied: "Applied",
-  interviewing: "Interviewing",
-  rejected: "Rejected",
-};
-
 function scoreTone(score: number) {
   if (score >= 85) return "strong";
   if (score >= 70) return "medium";
@@ -63,11 +55,12 @@ function scoreTone(score: number) {
 
 export function App() {
   const [profile, setProfile] = useState<Profile>(defaultProfile);
-  const [profileDraft, setProfileDraft] = useState(profileToDraft(defaultProfile));
+  const [characteristicDraft, setCharacteristicDraft] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [dataSource, setDataSource] = useState("Waiting for capture");
   const [notice, setNotice] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -89,7 +82,6 @@ export function App() {
         if (isMounted) {
           const mappedProfile = mapProfile(apiProfile);
           setProfile(mappedProfile);
-          setProfileDraft(profileToDraft(mappedProfile));
           setJobs(apiJobs.map(mapJob));
           setDataSource("Local API");
         }
@@ -122,7 +114,6 @@ export function App() {
     ])) as [ApiProfile, ApiJob[]];
     const mappedProfile = mapProfile(apiProfile);
     setProfile(mappedProfile);
-    setProfileDraft(profileToDraft(mappedProfile));
     setJobs(apiJobs.map(mapJob));
     setDataSource("Local API");
   }
@@ -155,35 +146,55 @@ export function App() {
     }
   }
 
-  async function saveProfile() {
+  async function addCharacteristic() {
+    const characteristic = characteristicDraft.trim();
+    if (!characteristic) {
+      return;
+    }
+
     setIsSaving(true);
-    setNotice("Saving profile...");
+    setNotice("Saving characteristic...");
     try {
+      const userCharacteristics = uniqueTerms([...profile.userCharacteristics, characteristic]);
       const response = await fetch("http://127.0.0.1:8000/api/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: profileDraft.name.trim() || "Local Profile",
-          target_roles: splitTerms(profileDraft.targetRoles),
-          skills: splitTerms(profileDraft.skills),
-          locations: splitTerms(profileDraft.locations),
-          dealbreakers: splitTerms(profileDraft.dealbreakers),
-          seniority: profileDraft.seniority.trim() || "entry",
+          name: profile.name,
+          target_roles: profile.targetRoles,
+          skills: profile.skills,
+          locations: profile.locations,
+          dealbreakers: profile.dealbreakers,
+          seniority: profile.seniority,
+          user_characteristics: userCharacteristics,
         }),
       });
       if (!response.ok) {
         throw new Error(await response.text());
       }
       await refreshDashboardData();
-      setNotice("Profile saved. Jobs were rescored.");
+      setCharacteristicDraft("");
+      setNotice("Characteristic saved.");
     } catch (_error) {
-      setNotice("Profile save failed.");
+      setNotice("Characteristic save failed.");
     } finally {
       setIsSaving(false);
     }
   }
 
-  const sortedJobs = useMemo(() => [...jobs].sort((a, b) => b.fit.score - a.fit.score), [jobs]);
+  const filteredJobs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return jobs;
+    }
+    return jobs.filter((job) =>
+      [job.title, job.company, job.location, job.description, job.fit.summary, ...job.fit.matchedSkills, ...job.fit.missingSkills]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [jobs, searchQuery]);
+  const sortedJobs = useMemo(() => [...filteredJobs].sort((a, b) => b.fit.score - a.fit.score), [filteredJobs]);
   const averageScore = Math.round(jobs.reduce((total, job) => total + job.fit.score, 0) / Math.max(jobs.length, 1));
   const savedCount = jobs.filter((job) => job.status === "saved").length;
   const cautionCount = jobs.filter((job) => job.fit.penalties.length > 0).length;
@@ -218,85 +229,58 @@ export function App() {
           {notice ? <p className="form-notice">{notice}</p> : null}
         </section>
 
-        <section className="panel">
+        <section className="panel characteristics-panel">
           <div className="panel-heading">
-            <BriefcaseBusiness size={18} aria-hidden="true" />
-            <h2>Profile</h2>
+            <Sparkles size={18} aria-hidden="true" />
+            <h2>Characteristics</h2>
           </div>
-          <div className="profile-form">
-            <label className="text-field">
-              <span>Name</span>
-              <input
-                value={profileDraft.name}
-                onChange={(event) => setProfileDraft({ ...profileDraft, name: event.target.value })}
-              />
-            </label>
-            <label className="text-field">
-              <span>Target roles</span>
-              <input
-                value={profileDraft.targetRoles}
-                onChange={(event) => setProfileDraft({ ...profileDraft, targetRoles: event.target.value })}
-              />
-            </label>
-            <label className="text-field">
-              <span>Skills</span>
-              <input
-                value={profileDraft.skills}
-                onChange={(event) => setProfileDraft({ ...profileDraft, skills: event.target.value })}
-              />
-            </label>
-            <button className="primary-button" type="button" disabled={isSaving} onClick={saveProfile}>
-              <Save size={16} aria-hidden="true" />
-              Save profile
+          <div className="characteristic-legend" aria-label="Characteristic source legend">
+            <span>
+              <span className="source-dot resume" aria-hidden="true" />
+              From resume
+            </span>
+            <span>
+              <span className="source-dot user" aria-hidden="true" />
+              Added by you
+            </span>
+          </div>
+          {profile.characteristics.length > 0 ? (
+            <ul className="characteristic-list">
+              {profile.characteristics.map((characteristic) => {
+                const source = characteristicSource(characteristic, profile);
+                const sourceLabel = source === "user" ? "added by you" : "from resume";
+                return (
+                  <li
+                    aria-label={`${characteristic}, ${sourceLabel}`}
+                    className={`characteristic-chip ${source}`}
+                    key={characteristic}
+                    title={`${characteristic} (${sourceLabel})`}
+                  >
+                    <span>{characteristic}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="empty-copy">Upload a resume or add a characteristic.</p>
+          )}
+          <form className="characteristic-form" onSubmit={(event) => event.preventDefault()}>
+            <input
+              aria-label="Add characteristic"
+              placeholder="Add characteristic"
+              value={characteristicDraft}
+              onChange={(event) => setCharacteristicDraft(event.target.value)}
+            />
+            <button
+              className="primary-button"
+              type="button"
+              disabled={isSaving || !characteristicDraft.trim()}
+              onClick={addCharacteristic}
+            >
+              Add
             </button>
-          </div>
+          </form>
         </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <SlidersHorizontal size={18} aria-hidden="true" />
-            <h2>Preferences</h2>
-          </div>
-          <dl className="definition-list">
-            <div>
-              <dt>Locations</dt>
-              <dd>
-                <input
-                  className="inline-input"
-                  value={profileDraft.locations}
-                  onChange={(event) => setProfileDraft({ ...profileDraft, locations: event.target.value })}
-                />
-              </dd>
-            </div>
-            <div>
-              <dt>Seniority</dt>
-              <dd>
-                <input
-                  className="inline-input"
-                  value={profileDraft.seniority}
-                  onChange={(event) => setProfileDraft({ ...profileDraft, seniority: event.target.value })}
-                />
-              </dd>
-            </div>
-            <div>
-              <dt>Dealbreakers</dt>
-              <dd>
-                <input
-                  className="inline-input"
-                  value={profileDraft.dealbreakers}
-                  onChange={(event) => setProfileDraft({ ...profileDraft, dealbreakers: event.target.value })}
-                />
-              </dd>
-            </div>
-          </dl>
-        </section>
-
-        <div className="button-stack">
-          <button className="secondary-button" type="button" title="Filter captured jobs">
-            <Filter size={16} aria-hidden="true" />
-            Filters
-          </button>
-        </div>
       </aside>
 
       <section className="workspace" aria-label="Ranked jobs">
@@ -308,7 +292,12 @@ export function App() {
           </div>
           <label className="search-box">
             <Search size={17} aria-hidden="true" />
-            <input aria-label="Search jobs" placeholder="Search title, company, skill" />
+            <input
+              aria-label="Search jobs"
+              placeholder="Search title, company, skill"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
           </label>
         </header>
 
@@ -322,49 +311,65 @@ export function App() {
         <section className="job-list" aria-label="Fit-ranked job list">
           {sortedJobs.length === 0 ? (
             <article className="empty-state">
-              <h3>No captured jobs yet</h3>
-              <p>Open Handshake, reload the extension, and click Capture visible jobs to populate this dashboard.</p>
+              <h3>{jobs.length === 0 ? "No captured jobs yet" : "No matching jobs"}</h3>
+              <p>
+                {jobs.length === 0
+                  ? "Open Handshake, reload the extension, and click Capture visible jobs to populate this dashboard."
+                  : "Clear or change the search query to see more captured jobs."}
+              </p>
             </article>
           ) : (
-            sortedJobs.map((job) => (
-              <article className="job-card" key={job.id}>
-              <div className="job-main">
-                <div>
-                  <div className="job-title-row">
-                    <h3>{job.title}</h3>
-                    <span className="status-pill">{statusLabels[job.status]}</span>
+            sortedJobs.map((job) => {
+              const display = jobDisplay(job);
+              return (
+                <article className="job-card" key={job.id}>
+                  <div className="job-main">
+                    <div>
+                      <div className="job-title-row">
+                        <h3>{display.role}</h3>
+                      </div>
+                      <dl className="job-meta">
+                        <div>
+                          <dt>Company Name</dt>
+                          <dd>{display.company}</dd>
+                        </div>
+                        <div>
+                          <dt>Company Location</dt>
+                          <dd>{display.location}</dd>
+                        </div>
+                        <div>
+                          <dt>Remote / In-person</dt>
+                          <dd>{display.workMode}</dd>
+                        </div>
+                        <div>
+                          <dt>Full-Time/Part-Time/Internship</dt>
+                          <dd>{display.employmentType}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div className={`score-badge ${scoreTone(job.fit.score)}`}>
+                      <span>{job.fit.score}%</span>
+                      <small>fit</small>
+                    </div>
                   </div>
-                  <p className="company-line">
-                    {job.company}
-                    <span aria-hidden="true">/</span>
-                    <MapPin size={15} aria-hidden="true" />
-                    {job.location}
-                  </p>
-                </div>
-                <div className={`score-badge ${scoreTone(job.fit.score)}`}>
-                  <span>{job.fit.score}%</span>
-                  <small>fit</small>
-                </div>
-              </div>
 
-              <p className="summary">{job.fit.summary}</p>
+                  <p className="summary">{job.fit.summary}</p>
 
-              <div className="fit-grid">
-                <FitColumn title="Matched" items={job.fit.matchedSkills} icon="check" />
-                <FitColumn title="Missing" items={job.fit.missingSkills} icon="warn" />
-                <FitColumn title="Cautions" items={job.fit.penalties} icon="warn" />
-              </div>
+                  <div className="fit-grid">
+                    <FitColumn title="Matched" items={job.fit.matchedSkills} icon="check" />
+                    <FitColumn title="Missing" items={job.fit.missingSkills} icon="warn" />
+                    <FitColumn title="Cautions" items={job.fit.penalties} icon="warn" />
+                  </div>
 
-              <div className="job-actions">
-                <a href={job.sourceUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink size={15} aria-hidden="true" />
-                  Open source
-                </a>
-                <button type="button">Save</button>
-                <button type="button">Mark applied</button>
-              </div>
-              </article>
-            ))
+                  <div className="job-actions">
+                    <a href={job.sourceUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink size={15} aria-hidden="true" />
+                      Open source
+                    </a>
+                  </div>
+                </article>
+              );
+            })
           )}
         </section>
       </section>
@@ -379,6 +384,9 @@ function mapProfile(profile: ApiProfile): Profile {
     skills: profile.skills,
     locations: profile.locations,
     dealbreakers: profile.dealbreakers,
+    resumeCharacteristics: profile.resume_characteristics,
+    userCharacteristics: profile.user_characteristics,
+    characteristics: profile.characteristics,
     seniority: profile.seniority,
     resumeFilename: profile.resume_filename,
     resumeUploadedAt: profile.resume_uploaded_at,
@@ -392,6 +400,7 @@ function mapJob(job: ApiJob): Job {
     title: job.title,
     company: job.company,
     location: job.location,
+    description: job.description,
     sourceUrl: job.source_url,
     status: job.status,
     fit: {
@@ -405,26 +414,77 @@ function mapJob(job: ApiJob): Job {
   };
 }
 
-function profileToDraft(profile: Profile) {
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function characteristicSource(characteristic: string, profile: Profile) {
+  const key = characteristic.toLowerCase();
+  if (profile.userCharacteristics.some((item) => item.toLowerCase() === key)) {
+    return "user";
+  }
+  return "resume";
+}
+
+function uniqueTerms(terms: string[]) {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const term of terms) {
+    const cleaned = term.trim();
+    const key = cleaned.toLowerCase();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(cleaned);
+  }
+  return unique;
+}
+
+function jobDisplay(job: Job) {
+  const text = [job.title, job.company, job.location, job.description].join(" ");
+  const location = cleanValue(extractLocation(text) || job.location);
   return {
-    name: profile.name,
-    targetRoles: profile.targetRoles.join(", "),
-    skills: profile.skills.join(", "),
-    locations: profile.locations.join(", "),
-    dealbreakers: profile.dealbreakers.join(", "),
-    seniority: profile.seniority,
+    role: cleanValue(extractRole(job), "Unknown role"),
+    company: cleanValue(job.company),
+    location,
+    workMode: /\bremote\b/i.test(text) ? "Remote" : location === "Unknown" ? "Unknown" : "In-person",
+    employmentType: extractEmploymentType(text),
   };
 }
 
-function splitTerms(value: string) {
-  return value
-    .split(",")
-    .map((term) => term.trim())
-    .filter(Boolean);
+function extractRole(job: Job) {
+  let role = job.title;
+  if (job.company && job.company !== "Unknown company" && role.toLowerCase().startsWith(job.company.toLowerCase())) {
+    role = role.slice(job.company.length);
+  }
+  role = role
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\$[\d,.]+(?:[–-][\d,.]+)?\s*(?:K|hr|mo|yr)?(?:\/(?:hr|mo|yr))?/gi, " ")
+    .split(/\b(?:Unpaid|Paid|Internship|Full-time(?: job)?|Part[- ]time|Remote|Hybrid|Onsite|Promoted|New)\b/i)[0]
+    .replace(/\s+[A-Z][a-z]+,\s*[A-Z]{2}.*$/, "")
+    .trim();
+  return (
+    role.match(
+      /\b(?:Junior|Jr\.?|New Grad|Intern)?\s*(?:AI|Full Stack|Frontend|Front End|Backend|Mobile|Web|Embedded|Software|Data|UX\/UI|UI|Growth|Platform|Project|Sales|Optical|Firmware|Systems|Engineering)[A-Za-z /,&-]*(?:Engineer|Developer|Analyst|Designer|Intern|Representative|Scientist|Specialist)\b/i,
+    )?.[0] || role
+  );
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+function extractLocation(text: string) {
+  return text.match(/(?:^|[^A-Za-z])([A-Z][a-zA-Z .'-]+,\s*[A-Z]{2})\b/)?.[1] || "";
+}
+
+function extractEmploymentType(text: string) {
+  if (/\binternship\b/i.test(text)) return "Internship";
+  if (/\bpart[- ]time\b/i.test(text)) return "Part-Time";
+  if (/\bfull[- ]time(?: job)?\b/i.test(text)) return "Full-Time";
+  return "Unknown";
+}
+
+function cleanValue(value: string, fallback = "Unknown") {
+  const cleaned = value.replace(/^Unknown company$/i, "").trim();
+  return cleaned || fallback;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

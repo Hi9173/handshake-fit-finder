@@ -20,6 +20,7 @@ class ParsedResume:
     target_roles: list[str]
     skills: list[str]
     locations: list[str]
+    characteristics: list[str]
     seniority: str
 
 
@@ -48,6 +49,7 @@ async def parse_resume_upload(file: UploadFile) -> ParsedResume:
         target_roles=_extract_roles(text),
         skills=_extract_skills(text),
         locations=_extract_locations(text),
+        characteristics=extract_characteristics(text),
         seniority="entry",
     )
 
@@ -86,6 +88,16 @@ def _extract_roles(text: str) -> list[str]:
 def _extract_locations(text: str) -> list[str]:
     normalized = _normalize(text)
     return [location for location in LOCATION_KEYWORDS if _contains_term(normalized, location)]
+
+
+def extract_characteristics(text: str) -> list[str]:
+    normalized = _normalize(text)
+    characteristics = list(_extract_skills(text))
+    if "recent graduate" in normalized or "new graduate" in normalized or "new grad" in normalized:
+        characteristics.append("New graduate")
+    if "willing to relocate" in normalized or "open to relocate" in normalized or "open to relocation" in normalized:
+        characteristics.append("Willing to relocate")
+    return list(dict.fromkeys(characteristics))
 
 
 def _normalize(value: str) -> str:

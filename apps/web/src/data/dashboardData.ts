@@ -14,6 +14,7 @@ export type Job = {
   title: string;
   company: string;
   location: string;
+  description: string;
   sourceUrl: string;
   status: JobStatus;
   fit: FitScore;
@@ -25,6 +26,9 @@ export const defaultProfile = {
   skills: ["Python", "SQL", "React", "TypeScript", "Excel"],
   locations: ["Remote", "San Francisco", "New York"],
   dealbreakers: ["Unpaid", "Onsite only"],
+  resumeCharacteristics: [] as string[],
+  userCharacteristics: [] as string[],
+  characteristics: [] as string[],
   seniority: "entry",
   resumeFilename: null as string | null,
   resumeUploadedAt: null as string | null,

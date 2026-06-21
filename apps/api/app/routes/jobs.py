@@ -6,7 +6,7 @@ from app.database import Base, get_db
 from app.models import FitScore, Job, Profile, utc_now
 from app.schemas import JobCaptureBatch, JobCreate, JobRead, ProfileRead, ProfileUpdate
 from app.services.profile_store import get_or_create_profile, has_resume, profile_input, zero_resume_score
-from app.services.resume_parser import parse_resume_upload
+from app.services.resume_parser import extract_characteristics, parse_resume_upload
 from app.services.scoring import JobInput, score_job
 
 router = APIRouter(prefix="/api", tags=["jobs"])
@@ -22,6 +22,7 @@ MAX_SOURCE_LENGTH = 80
 def get_profile(db: Session = Depends(get_db)) -> ProfileRead:
     _ensure_schema(db)
     profile = get_or_create_profile(db)
+    _backfill_resume_characteristics(profile)
     db.commit()
     return _serialize_profile(profile)
 
@@ -35,6 +36,7 @@ def update_profile(update: ProfileUpdate, db: Session = Depends(get_db)) -> Prof
     profile.skills = update.skills
     profile.locations = update.locations
     profile.dealbreakers = update.dealbreakers
+    profile.user_characteristics = _dedupe_terms(update.user_characteristics)
     profile.seniority = update.seniority
     _rescore_all_jobs(db, profile)
     db.commit()
@@ -54,6 +56,7 @@ async def upload_resume(file: UploadFile, db: Session = Depends(get_db)) -> Prof
     profile.target_roles = parsed.target_roles or profile.target_roles
     profile.skills = parsed.skills
     profile.locations = parsed.locations or profile.locations
+    profile.resume_characteristics = parsed.characteristics
     profile.seniority = parsed.seniority
     _rescore_all_jobs(db, profile)
     db.commit()
@@ -188,11 +191,19 @@ def _serialize_profile(profile: Profile) -> ProfileRead:
         skills=profile.skills or [],
         locations=profile.locations or [],
         dealbreakers=profile.dealbreakers or [],
+        resume_characteristics=profile.resume_characteristics or [],
+        user_characteristics=profile.user_characteristics or [],
+        characteristics=_combined_characteristics(profile),
         seniority=profile.seniority or "entry",
         resume_filename=profile.resume_filename,
         resume_uploaded_at=profile.resume_uploaded_at,
         has_resume=has_resume(profile),
     )
+
+
+def _backfill_resume_characteristics(profile: Profile) -> None:
+    if has_resume(profile) and profile.resume_text and not (profile.resume_characteristics or []):
+        profile.resume_characteristics = extract_characteristics(profile.resume_text)
 
 
 def _serialize_job(job: Job, profile: Profile) -> JobRead:
@@ -247,7 +258,25 @@ def _ensure_profile_resume_columns(db: Session) -> None:
         "resume_path": "VARCHAR(1000)",
         "resume_text": "TEXT",
         "resume_uploaded_at": "DATETIME",
+        "resume_characteristics": "JSON",
+        "user_characteristics": "JSON",
     }
     for name, column_type in missing_columns.items():
         if name not in columns:
             db.execute(text(f"ALTER TABLE profiles ADD COLUMN {name} {column_type}"))
+
+
+def _combined_characteristics(profile: Profile) -> list[str]:
+    return _dedupe_terms([*(profile.resume_characteristics or []), *(profile.user_characteristics or [])])
+
+
+def _dedupe_terms(terms: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        cleaned = term.strip()
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            deduped.append(cleaned)
+            seen.add(key)
+    return deduped

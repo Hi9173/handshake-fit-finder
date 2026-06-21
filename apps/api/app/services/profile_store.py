@@ -20,6 +20,8 @@ def get_or_create_profile(db: Session) -> Profile:
         skills=DEFAULT_PROFILE.skills,
         locations=DEFAULT_PROFILE.locations,
         dealbreakers=DEFAULT_PROFILE.dealbreakers,
+        resume_characteristics=[],
+        user_characteristics=[],
         seniority=DEFAULT_PROFILE.seniority,
     )
     db.add(profile)

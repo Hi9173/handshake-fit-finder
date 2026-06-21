@@ -19,6 +19,9 @@ class ProfileRead(BaseModel):
     skills: list[str] = Field(default_factory=lambda: ["python", "sql", "react", "typescript", "excel"])
     locations: list[str] = Field(default_factory=lambda: ["remote", "san francisco", "new york"])
     dealbreakers: list[str] = Field(default_factory=lambda: ["unpaid", "onsite only"])
+    resume_characteristics: list[str] = Field(default_factory=list)
+    user_characteristics: list[str] = Field(default_factory=list)
+    characteristics: list[str] = Field(default_factory=list)
     seniority: str = "entry"
     resume_filename: str | None = None
     resume_uploaded_at: datetime | None = None
@@ -31,6 +34,7 @@ class ProfileUpdate(BaseModel):
     skills: list[str] = Field(default_factory=list)
     locations: list[str] = Field(default_factory=list)
     dealbreakers: list[str] = Field(default_factory=list)
+    user_characteristics: list[str] = Field(default_factory=list)
     seniority: str = "entry"
 
 
