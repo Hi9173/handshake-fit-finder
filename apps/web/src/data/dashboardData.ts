@@ -14,6 +14,7 @@ export type Job = {
   title: string;
   company: string;
   location: string;
+  description: string;
   sourceUrl: string;
   status: JobStatus;
   fit: FitScore;

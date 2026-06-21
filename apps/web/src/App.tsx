@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   ExternalLink,
   FileText,
-  MapPin,
   Radar,
   Save,
   Search,
@@ -34,6 +33,7 @@ type ApiJob = {
   title: string;
   company: string;
   location: string;
+  description: string;
   source_url: string;
   status: JobStatus;
   fit: {
@@ -44,14 +44,6 @@ type ApiJob = {
     penalties: string[];
     summary: string;
   };
-};
-
-const statusLabels: Record<Job["status"], string> = {
-  captured: "Captured",
-  saved: "Saved",
-  applied: "Applied",
-  interviewing: "Interviewing",
-  rejected: "Rejected",
 };
 
 function scoreTone(score: number) {
@@ -189,7 +181,7 @@ export function App() {
       return jobs;
     }
     return jobs.filter((job) =>
-      [job.title, job.company, job.location, job.fit.summary, ...job.fit.matchedSkills, ...job.fit.missingSkills]
+      [job.title, job.company, job.location, job.description, job.fit.summary, ...job.fit.matchedSkills, ...job.fit.missingSkills]
         .join(" ")
         .toLowerCase()
         .includes(query),
@@ -340,43 +332,57 @@ export function App() {
               </p>
             </article>
           ) : (
-            sortedJobs.map((job) => (
-              <article className="job-card" key={job.id}>
-              <div className="job-main">
-                <div>
-                  <div className="job-title-row">
-                    <h3>{job.title}</h3>
-                    <span className="status-pill">{statusLabels[job.status]}</span>
+            sortedJobs.map((job) => {
+              const display = jobDisplay(job);
+              return (
+                <article className="job-card" key={job.id}>
+                  <div className="job-main">
+                    <div>
+                      <div className="job-title-row">
+                        <h3>{display.role}</h3>
+                      </div>
+                      <dl className="job-meta">
+                        <div>
+                          <dt>Company Name</dt>
+                          <dd>{display.company}</dd>
+                        </div>
+                        <div>
+                          <dt>Company Location</dt>
+                          <dd>{display.location}</dd>
+                        </div>
+                        <div>
+                          <dt>Remote / In-person</dt>
+                          <dd>{display.workMode}</dd>
+                        </div>
+                        <div>
+                          <dt>Full-Time/Part-Time/Internship</dt>
+                          <dd>{display.employmentType}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                    <div className={`score-badge ${scoreTone(job.fit.score)}`}>
+                      <span>{job.fit.score}%</span>
+                      <small>fit</small>
+                    </div>
                   </div>
-                  <p className="company-line">
-                    {job.company}
-                    <span aria-hidden="true">/</span>
-                    <MapPin size={15} aria-hidden="true" />
-                    {job.location}
-                  </p>
-                </div>
-                <div className={`score-badge ${scoreTone(job.fit.score)}`}>
-                  <span>{job.fit.score}%</span>
-                  <small>fit</small>
-                </div>
-              </div>
 
-              <p className="summary">{job.fit.summary}</p>
+                  <p className="summary">{job.fit.summary}</p>
 
-              <div className="fit-grid">
-                <FitColumn title="Matched" items={job.fit.matchedSkills} icon="check" />
-                <FitColumn title="Missing" items={job.fit.missingSkills} icon="warn" />
-                <FitColumn title="Cautions" items={job.fit.penalties} icon="warn" />
-              </div>
+                  <div className="fit-grid">
+                    <FitColumn title="Matched" items={job.fit.matchedSkills} icon="check" />
+                    <FitColumn title="Missing" items={job.fit.missingSkills} icon="warn" />
+                    <FitColumn title="Cautions" items={job.fit.penalties} icon="warn" />
+                  </div>
 
-              <div className="job-actions">
-                <a href={job.sourceUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink size={15} aria-hidden="true" />
-                  Open source
-                </a>
-              </div>
-              </article>
-            ))
+                  <div className="job-actions">
+                    <a href={job.sourceUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink size={15} aria-hidden="true" />
+                      Open source
+                    </a>
+                  </div>
+                </article>
+              );
+            })
           )}
         </section>
       </section>
@@ -404,6 +410,7 @@ function mapJob(job: ApiJob): Job {
     title: job.title,
     company: job.company,
     location: job.location,
+    description: job.description,
     sourceUrl: job.source_url,
     status: job.status,
     fit: {
@@ -437,6 +444,52 @@ function splitTerms(value: string) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function jobDisplay(job: Job) {
+  const text = [job.title, job.company, job.location, job.description].join(" ");
+  const location = cleanValue(extractLocation(text) || job.location);
+  return {
+    role: cleanValue(extractRole(job), "Unknown role"),
+    company: cleanValue(job.company),
+    location,
+    workMode: /\bremote\b/i.test(text) ? "Remote" : location === "Unknown" ? "Unknown" : "In-person",
+    employmentType: extractEmploymentType(text),
+  };
+}
+
+function extractRole(job: Job) {
+  let role = job.title;
+  if (job.company && job.company !== "Unknown company" && role.toLowerCase().startsWith(job.company.toLowerCase())) {
+    role = role.slice(job.company.length);
+  }
+  role = role
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\$[\d,.]+(?:[–-][\d,.]+)?\s*(?:K|hr|mo|yr)?(?:\/(?:hr|mo|yr))?/gi, " ")
+    .split(/\b(?:Unpaid|Paid|Internship|Full-time(?: job)?|Part[- ]time|Remote|Hybrid|Onsite|Promoted|New)\b/i)[0]
+    .replace(/\s+[A-Z][a-z]+,\s*[A-Z]{2}.*$/, "")
+    .trim();
+  return (
+    role.match(
+      /\b(?:Junior|Jr\.?|New Grad|Intern)?\s*(?:AI|Full Stack|Frontend|Front End|Backend|Mobile|Web|Embedded|Software|Data|UX\/UI|UI|Growth|Platform|Project|Sales|Optical|Firmware|Systems|Engineering)[A-Za-z /,&-]*(?:Engineer|Developer|Analyst|Designer|Intern|Representative|Scientist|Specialist)\b/i,
+    )?.[0] || role
+  );
+}
+
+function extractLocation(text: string) {
+  return text.match(/(?:^|[^A-Za-z])([A-Z][a-zA-Z .'-]+,\s*[A-Z]{2})\b/)?.[1] || "";
+}
+
+function extractEmploymentType(text: string) {
+  if (/\binternship\b/i.test(text)) return "Internship";
+  if (/\bpart[- ]time\b/i.test(text)) return "Part-Time";
+  if (/\bfull[- ]time(?: job)?\b/i.test(text)) return "Full-Time";
+  return "Unknown";
+}
+
+function cleanValue(value: string, fallback = "Unknown") {
+  const cleaned = value.replace(/^Unknown company$/i, "").trim();
+  return cleaned || fallback;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

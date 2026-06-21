@@ -44,7 +44,6 @@ a {
 .brand-row,
 .panel-heading,
 .job-title-row,
-.company-line,
 .job-actions,
 .search-box,
 .primary-button {
@@ -84,7 +83,7 @@ h1 {
 .eyebrow,
 .data-source,
 .summary,
-.company-line,
+.job-meta,
 .definition-list,
 .metric span,
 .fit-column p {
@@ -375,10 +374,28 @@ h1 {
   line-height: 1.25;
 }
 
-.company-line {
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 6px;
+.job-meta {
+  display: grid;
+  gap: 7px 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 10px 0 0;
+}
+
+.job-meta div {
+  min-width: 0;
+}
+
+.job-meta dt {
+  color: #26343b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.job-meta dd {
+  font-size: 13px;
+  line-height: 1.35;
+  margin: 2px 0 0;
 }
 
 .score-badge {
@@ -487,7 +504,8 @@ h1 {
   }
 
   .metrics,
-  .fit-grid {
+  .fit-grid,
+  .job-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -500,6 +518,7 @@ h1 {
 
   .metrics,
   .fit-grid,
+  .job-meta,
   .job-main {
     grid-template-columns: 1fr;
   }
