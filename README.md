@@ -6,11 +6,22 @@ A local-first app that captures Handshake job search results from your browser s
 
 - Chrome extension captures the jobs available on the current Handshake results page.
 - FastAPI backend stores captured jobs and returns them to the app.
-- React dashboard displays captured jobs with local resume-based fit scores.
-- Resume upload supports `.md`, `.tex`, and `.pdf` files, stores the resume locally, and extracts an editable profile.
+- React dashboard displays captured jobs by local workflow category.
+- Resume upload supports `.md`, `.tex`, and `.pdf` files, stores the resume locally, and extracts editable profile signals.
+- Job cards show required and preferred signals, with profile-matched signals highlighted first.
 - MySQL is available through Docker Compose for local persistence.
 
-This version focuses on reliable Handshake capture, local persistence, and local resume-based scoring.
+This version focuses on reliable Handshake capture, local persistence, local resume-based scoring, and manual job triage.
+
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for the current local-first architecture checkpoint.
+
+At a high level:
+
+- `apps/extension`: browser-assisted Handshake capture from the user's visible session.
+- `apps/api`: FastAPI service, MySQL persistence, resume parsing, job signal extraction, scoring, and category updates.
+- `apps/web`: React dashboard for resume upload, profile signals, category filtering, signal matching, and job triage.
 
 ## Local development
 

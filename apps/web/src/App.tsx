@@ -1,16 +1,27 @@
 import {
-  AlertTriangle,
   CheckCircle2,
   ExternalLink,
   FileText,
   Radar,
   Search,
   Sparkles,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
-import { defaultProfile, type Job, type JobStatus } from "./data/dashboardData";
+import {
+  categoryForStatus,
+  countJobCategories,
+  defaultProfile,
+  filterJobsByCategory,
+  jobCategoryActions,
+  profileSignalMatches,
+  type Job,
+  type JobCategory,
+  type JobStatus,
+} from "./data/dashboardData";
 
 type Profile = typeof defaultProfile;
 
@@ -41,17 +52,13 @@ type ApiJob = {
     score: number;
     matched_skills: string[];
     missing_skills: string[];
+    required_signals?: string[];
+    preferred_signals?: string[];
     role_matches: string[];
     penalties: string[];
     summary: string;
   };
 };
-
-function scoreTone(score: number) {
-  if (score >= 85) return "strong";
-  if (score >= 70) return "medium";
-  return "weak";
-}
 
 export function App() {
   const [profile, setProfile] = useState<Profile>(defaultProfile);
@@ -60,7 +67,9 @@ export function App() {
   const [dataSource, setDataSource] = useState("Waiting for capture");
   const [notice, setNotice] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [movingJobId, setMovingJobId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState<JobCategory>("underReview");
 
   useEffect(() => {
     let isMounted = true;
@@ -153,7 +162,7 @@ export function App() {
     }
 
     setIsSaving(true);
-    setNotice("Saving characteristic...");
+    setNotice("Saving signal...");
     try {
       const userCharacteristics = uniqueTerms([...profile.userCharacteristics, characteristic]);
       const response = await fetch("http://127.0.0.1:8000/api/profile", {
@@ -166,6 +175,7 @@ export function App() {
           locations: profile.locations,
           dealbreakers: profile.dealbreakers,
           seniority: profile.seniority,
+          resume_characteristics: profile.resumeCharacteristics,
           user_characteristics: userCharacteristics,
         }),
       });
@@ -174,30 +184,118 @@ export function App() {
       }
       await refreshDashboardData();
       setCharacteristicDraft("");
-      setNotice("Characteristic saved.");
+      setNotice("Signal saved.");
     } catch (_error) {
-      setNotice("Characteristic save failed.");
+      setNotice("Signal save failed.");
     } finally {
       setIsSaving(false);
     }
   }
 
+  async function deleteSignal(signal: string) {
+    const key = signal.toLowerCase();
+
+    setIsSaving(true);
+    setNotice("Deleting signal...");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile.name,
+          target_roles: profile.targetRoles,
+          skills: profile.skills,
+          locations: profile.locations,
+          dealbreakers: profile.dealbreakers,
+          seniority: profile.seniority,
+          resume_characteristics: profile.resumeCharacteristics.filter((item) => item.toLowerCase() !== key),
+          user_characteristics: profile.userCharacteristics.filter((item) => item.toLowerCase() !== key),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshDashboardData();
+      setNotice("Signal deleted.");
+    } catch (_error) {
+      setNotice("Signal delete failed.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deleteCapturedJobs() {
+    if (jobs.length === 0 || !window.confirm("Delete all captured jobs from the local dashboard?")) {
+      return;
+    }
+
+    setIsSaving(true);
+    setNotice("Deleting captured jobs...");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/jobs", {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshDashboardData();
+      setNotice("Captured jobs deleted.");
+    } catch (_error) {
+      setNotice("Could not delete captured jobs.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function moveJob(jobId: number, status: JobStatus) {
+    setMovingJobId(jobId);
+    setNotice("Moving job...");
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/jobs/${jobId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const movedJob = mapJob((await response.json()) as ApiJob);
+      setJobs((currentJobs) => currentJobs.map((job) => (job.id === movedJob.id ? movedJob : job)));
+      setNotice("Job moved.");
+    } catch (_error) {
+      setNotice("Could not move job.");
+    } finally {
+      setMovingJobId(null);
+    }
+  }
+
   const filteredJobs = useMemo(() => {
+    const categoryJobs = filterJobsByCategory(jobs, activeCategory);
     const query = searchQuery.trim().toLowerCase();
     if (!query) {
-      return jobs;
+      return categoryJobs;
     }
-    return jobs.filter((job) =>
-      [job.title, job.company, job.location, job.description, job.fit.summary, ...job.fit.matchedSkills, ...job.fit.missingSkills]
+    return categoryJobs.filter((job) =>
+      [
+        job.title,
+        job.company,
+        job.location,
+        job.description,
+        job.fit.summary,
+        ...job.fit.matchedSkills,
+        ...job.fit.missingSkills,
+        ...job.fit.requiredSignals,
+        ...job.fit.preferredSignals,
+        ...job.fit.roleMatches,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query),
     );
-  }, [jobs, searchQuery]);
+  }, [activeCategory, jobs, searchQuery]);
   const sortedJobs = useMemo(() => [...filteredJobs].sort((a, b) => b.fit.score - a.fit.score), [filteredJobs]);
-  const averageScore = Math.round(jobs.reduce((total, job) => total + job.fit.score, 0) / Math.max(jobs.length, 1));
-  const savedCount = jobs.filter((job) => job.status === "saved").length;
-  const cautionCount = jobs.filter((job) => job.fit.penalties.length > 0).length;
+  const jobCounts = countJobCategories(jobs);
+  const activeCategoryLabel = categoryTileLabels[activeCategory];
 
   return (
     <main className="app-shell">
@@ -232,7 +330,7 @@ export function App() {
         <section className="panel characteristics-panel">
           <div className="panel-heading">
             <Sparkles size={18} aria-hidden="true" />
-            <h2>Characteristics</h2>
+            <h2>Profile Signals</h2>
           </div>
           <div className="characteristic-legend" aria-label="Characteristic source legend">
             <span>
@@ -256,18 +354,28 @@ export function App() {
                     key={characteristic}
                     title={`${characteristic} (${sourceLabel})`}
                   >
+                    <button
+                      aria-label={`Delete ${characteristic}`}
+                      className="delete-signal-button"
+                      disabled={isSaving}
+                      onClick={() => deleteSignal(characteristic)}
+                      title={`Delete ${characteristic}`}
+                      type="button"
+                    >
+                      <X size={11} aria-hidden="true" />
+                    </button>
                     <span>{characteristic}</span>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <p className="empty-copy">Upload a resume or add a characteristic.</p>
+            <p className="empty-copy">Upload a resume or add a profile signal.</p>
           )}
           <form className="characteristic-form" onSubmit={(event) => event.preventDefault()}>
             <input
-              aria-label="Add characteristic"
-              placeholder="Add characteristic"
+              aria-label="Add profile signal"
+              placeholder="Add profile signal"
               value={characteristicDraft}
               onChange={(event) => setCharacteristicDraft(event.target.value)}
             />
@@ -290,28 +398,61 @@ export function App() {
             <h2>Ranked jobs from your captured session</h2>
             <p className="data-source">{dataSource}</p>
           </div>
-          <label className="search-box">
-            <Search size={17} aria-hidden="true" />
-            <input
-              aria-label="Search jobs"
-              placeholder="Search title, company, skill"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </label>
+          <div className="header-actions">
+            <label className="search-box">
+              <Search size={17} aria-hidden="true" />
+              <input
+                aria-label="Search jobs"
+                placeholder="Search title, company, skill"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </label>
+            <button
+              aria-label="Delete all captured jobs"
+              className="danger-button"
+              disabled={isSaving || jobs.length === 0}
+              onClick={deleteCapturedJobs}
+              title="Delete all captured jobs"
+              type="button"
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              Clear jobs
+            </button>
+          </div>
         </header>
 
         <section className="metrics" aria-label="Job metrics">
-          <Metric label="Captured" value={jobs.length.toString()} />
-          <Metric label="Average fit" value={`${averageScore}%`} />
-          <Metric label="Saved" value={savedCount.toString()} />
-          <Metric label="Cautions" value={cautionCount.toString()} />
+          <Metric
+            active={activeCategory === "underReview"}
+            label="Under Review"
+            onClick={() => setActiveCategory("underReview")}
+            value={jobCounts.underReview.toString()}
+          />
+          <Metric
+            active={activeCategory === "applied"}
+            label="Applied"
+            onClick={() => setActiveCategory("applied")}
+            value={jobCounts.applied.toString()}
+          />
+          <Metric
+            active={activeCategory === "saved"}
+            label="Saved"
+            onClick={() => setActiveCategory("saved")}
+            value={jobCounts.saved.toString()}
+          />
+          <Metric
+            active={activeCategory === "skipped"}
+            label="Skipped"
+            onClick={() => setActiveCategory("skipped")}
+            value={jobCounts.skipped.toString()}
+          />
         </section>
 
         <section className="job-list" aria-label="Fit-ranked job list">
           {sortedJobs.length === 0 ? (
             <article className="empty-state">
-              <h3>{jobs.length === 0 ? "No captured jobs yet" : "No matching jobs"}</h3>
+              <h3>{jobs.length === 0 ? "No captured jobs yet" : `No ${activeCategoryLabel} jobs`}</h3>
               <p>
                 {jobs.length === 0
                   ? "Open Handshake, reload the extension, and click Capture visible jobs to populate this dashboard."
@@ -321,6 +462,8 @@ export function App() {
           ) : (
             sortedJobs.map((job) => {
               const display = jobDisplay(job);
+              const signals = jobSignals(job);
+              const actions = availableJobActions(job.status);
               return (
                 <article className="job-card" key={job.id}>
                   <div className="job-main">
@@ -347,18 +490,33 @@ export function App() {
                         </div>
                       </dl>
                     </div>
-                    <div className={`score-badge ${scoreTone(job.fit.score)}`}>
-                      <span>{job.fit.score}%</span>
-                      <small>fit</small>
+                    <div className="job-category-actions" aria-label={`Move ${display.role} to another category`}>
+                      {actions.map((action) => (
+                        <button
+                          disabled={movingJobId === job.id}
+                          key={action.category}
+                          onClick={() => moveJob(job.id, action.status)}
+                          type="button"
+                        >
+                          {action.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <p className="summary">{job.fit.summary}</p>
-
                   <div className="fit-grid">
-                    <FitColumn title="Matched" items={job.fit.matchedSkills} icon="check" />
-                    <FitColumn title="Missing" items={job.fit.missingSkills} icon="warn" />
-                    <FitColumn title="Cautions" items={job.fit.penalties} icon="warn" />
+                    <SignalColumn
+                      title="Required Signals"
+                      items={signals.required}
+                      icon="required"
+                      profileSignals={profile.characteristics}
+                    />
+                    <SignalColumn
+                      title="Preferred Signals"
+                      items={signals.preferred}
+                      icon="preferred"
+                      profileSignals={profile.characteristics}
+                    />
                   </div>
 
                   <div className="job-actions">
@@ -407,6 +565,8 @@ function mapJob(job: ApiJob): Job {
       score: job.fit.score,
       matchedSkills: job.fit.matched_skills,
       missingSkills: job.fit.missing_skills,
+      requiredSignals: job.fit.required_signals ?? [],
+      preferredSignals: job.fit.preferred_signals ?? [],
       roleMatches: job.fit.role_matches,
       penalties: job.fit.penalties,
       summary: job.fit.summary,
@@ -453,6 +613,25 @@ function jobDisplay(job: Job) {
   };
 }
 
+function jobSignals(job: Job) {
+  return {
+    required: uniqueTerms(job.fit.requiredSignals),
+    preferred: uniqueTerms(job.fit.preferredSignals),
+  };
+}
+
+const categoryTileLabels: Record<JobCategory, string> = {
+  underReview: "Under Review",
+  applied: "Applied",
+  saved: "Saved",
+  skipped: "Skipped",
+};
+
+function availableJobActions(status: JobStatus) {
+  const currentCategory = categoryForStatus(status);
+  return jobCategoryActions.filter((action) => action.category !== currentCategory);
+}
+
 function extractRole(job: Job) {
   let role = job.title;
   if (job.company && job.company !== "Unknown company" && role.toLowerCase().startsWith(job.company.toLowerCase())) {
@@ -487,31 +666,66 @@ function cleanValue(value: string, fallback = "Unknown") {
   return cleaned || fallback;
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  active,
+  label,
+  onClick,
+  value,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  value: string;
+}) {
   return (
-    <div className="metric">
+    <button aria-pressed={active} className={active ? "metric active" : "metric"} onClick={onClick} type="button">
       <span>{label}</span>
       <strong>{value}</strong>
-    </div>
+    </button>
   );
 }
 
-function FitColumn({ title, items, icon }: { title: string; items: string[]; icon: "check" | "warn" }) {
+function SignalColumn({
+  title,
+  items,
+  icon,
+  profileSignals,
+}: {
+  title: string;
+  items: string[];
+  icon: "required" | "preferred";
+  profileSignals: string[];
+}) {
+  const sortedItems = matchedSignalsFirst(items, profileSignals);
+
   return (
     <div className="fit-column">
       <h4>
-        {icon === "check" ? <CheckCircle2 size={15} aria-hidden="true" /> : <AlertTriangle size={15} aria-hidden="true" />}
+        {icon === "required" ? <CheckCircle2 size={15} aria-hidden="true" /> : <Sparkles size={15} aria-hidden="true" />}
         {title}
       </h4>
       {items.length > 0 ? (
         <ul>
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
+          {sortedItems.map((item) => {
+            const tone = profileSignalMatches(item, profileSignals) ? "matched" : "missing";
+            return (
+              <li className={tone} key={item}>
+                {item}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p>None</p>
       )}
     </div>
   );
+}
+
+function matchedSignalsFirst(items: string[], profileSignals: string[]) {
+  return [...items].sort((left, right) => {
+    const leftMatched = profileSignalMatches(left, profileSignals);
+    const rightMatched = profileSignalMatches(right, profileSignals);
+    return Number(rightMatched) - Number(leftMatched);
+  });
 }

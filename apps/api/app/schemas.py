@@ -34,7 +34,8 @@ class ProfileUpdate(BaseModel):
     skills: list[str] = Field(default_factory=list)
     locations: list[str] = Field(default_factory=list)
     dealbreakers: list[str] = Field(default_factory=list)
-    user_characteristics: list[str] = Field(default_factory=list)
+    resume_characteristics: list[str] | None = None
+    user_characteristics: list[str] | None = None
     seniority: str = "entry"
 
 
@@ -55,6 +56,8 @@ class FitScoreRead(BaseModel):
     score: int
     matched_skills: list[str]
     missing_skills: list[str]
+    required_signals: list[str]
+    preferred_signals: list[str]
     role_matches: list[str]
     penalties: list[str]
     summary: str
@@ -64,3 +67,7 @@ class JobRead(JobCreate):
     id: int
     status: ApplicationStatus = ApplicationStatus.captured
     fit: FitScoreRead
+
+
+class JobStatusUpdate(BaseModel):
+    status: ApplicationStatus

@@ -61,6 +61,8 @@ class FitScore(Base):
     score: Mapped[int] = mapped_column(Integer)
     matched_skills: Mapped[list[str]] = mapped_column(JSON, default=list)
     missing_skills: Mapped[list[str]] = mapped_column(JSON, default=list)
+    required_signals: Mapped[list[str]] = mapped_column(JSON, default=list)
+    preferred_signals: Mapped[list[str]] = mapped_column(JSON, default=list)
     role_matches: Mapped[list[str]] = mapped_column(JSON, default=list)
     penalties: Mapped[list[str]] = mapped_column(JSON, default=list)
     summary: Mapped[str] = mapped_column(String(255))

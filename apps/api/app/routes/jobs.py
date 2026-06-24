@@ -1,13 +1,13 @@
-from fastapi import APIRouter, Depends, UploadFile
-from sqlalchemy import inspect, select, text
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.database import Base, get_db
 from app.models import FitScore, Job, Profile, utc_now
-from app.schemas import JobCaptureBatch, JobCreate, JobRead, ProfileRead, ProfileUpdate
+from app.schemas import JobCaptureBatch, JobCreate, JobRead, JobStatusUpdate, ProfileRead, ProfileUpdate
 from app.services.profile_store import get_or_create_profile, has_resume, profile_input, zero_resume_score
 from app.services.resume_parser import extract_characteristics, parse_resume_upload
-from app.services.scoring import JobInput, score_job
+from app.services.scoring import JobInput, job_signals, score_job
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -36,7 +36,10 @@ def update_profile(update: ProfileUpdate, db: Session = Depends(get_db)) -> Prof
     profile.skills = update.skills
     profile.locations = update.locations
     profile.dealbreakers = update.dealbreakers
-    profile.user_characteristics = _dedupe_terms(update.user_characteristics)
+    if update.resume_characteristics is not None:
+        profile.resume_characteristics = _dedupe_terms(update.resume_characteristics)
+    if update.user_characteristics is not None:
+        profile.user_characteristics = _dedupe_terms(update.user_characteristics)
     profile.seniority = update.seniority
     _rescore_all_jobs(db, profile)
     db.commit()
@@ -71,6 +74,28 @@ def list_jobs(db: Session = Depends(get_db)) -> list[JobRead]:
     stored_jobs = db.scalars(select(Job).order_by(Job.created_at.desc())).all()
     serialized = [_serialize_job(job, profile) for job in stored_jobs if job.score is not None]
     return sorted(serialized, key=lambda item: item.fit.score, reverse=True)
+
+
+@router.delete("/jobs")
+def delete_jobs(db: Session = Depends(get_db)) -> dict[str, int]:
+    _ensure_schema(db)
+    db.execute(delete(FitScore))
+    deleted = db.execute(delete(Job)).rowcount or 0
+    db.commit()
+    return {"deleted": deleted}
+
+
+@router.patch("/jobs/{job_id}/status", response_model=JobRead)
+def update_job_status(job_id: int, update: JobStatusUpdate, db: Session = Depends(get_db)) -> JobRead:
+    _ensure_schema(db)
+    profile = get_or_create_profile(db)
+    job = db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.status = update.status.value
+    db.commit()
+    db.refresh(job)
+    return _serialize_job(job, profile)
 
 
 @router.post("/jobs/score", response_model=JobRead)
@@ -119,6 +144,8 @@ def _upsert_job(db: Session, profile: Profile, job_input: JobCreate) -> Job:
         existing_job.score.score = score.score
         existing_job.score.matched_skills = score.matched_skills
         existing_job.score.missing_skills = score.missing_skills
+        existing_job.score.required_signals = score.required_signals
+        existing_job.score.preferred_signals = score.preferred_signals
         existing_job.score.role_matches = score.role_matches
         existing_job.score.penalties = score.penalties
         existing_job.score.summary = score.summary
@@ -150,12 +177,14 @@ def _find_existing_job(db: Session, job_input: JobCreate) -> Job | None:
 
 
 def _score_for_job(profile: Profile, job: JobCreate):
+    job_input = JobInput(title=job.title, company=job.company, location=job.location, description=job.description)
     if not has_resume(profile):
-        return zero_resume_score()
+        required_signals, preferred_signals = job_signals(job_input)
+        return zero_resume_score(required_signals, preferred_signals)
 
     return score_job(
         profile_input(profile),
-        JobInput(title=job.title, company=job.company, location=job.location, description=job.description),
+        job_input,
     )
 
 
@@ -177,6 +206,8 @@ def _rescore_all_jobs(db: Session, profile: Profile) -> None:
             job.score.score = score.score
             job.score.matched_skills = score.matched_skills
             job.score.missing_skills = score.missing_skills
+            job.score.required_signals = score.required_signals
+            job.score.preferred_signals = score.preferred_signals
             job.score.role_matches = score.role_matches
             job.score.penalties = score.penalties
             job.score.summary = score.summary
@@ -225,6 +256,8 @@ def _serialize_job(job: Job, profile: Profile) -> JobRead:
             "score": job.score.score,
             "matched_skills": job.score.matched_skills,
             "missing_skills": job.score.missing_skills,
+            "required_signals": job.score.required_signals,
+            "preferred_signals": job.score.preferred_signals,
             "role_matches": job.score.role_matches,
             "penalties": job.score.penalties,
             "summary": job.score.summary,
@@ -245,6 +278,7 @@ def _serialize_job(job: Job, profile: Profile) -> JobRead:
 def _ensure_schema(db: Session) -> None:
     Base.metadata.create_all(bind=db.get_bind())
     _ensure_profile_resume_columns(db)
+    _ensure_fit_score_signal_columns(db)
 
 
 def _ensure_profile_resume_columns(db: Session) -> None:
@@ -264,6 +298,21 @@ def _ensure_profile_resume_columns(db: Session) -> None:
     for name, column_type in missing_columns.items():
         if name not in columns:
             db.execute(text(f"ALTER TABLE profiles ADD COLUMN {name} {column_type}"))
+
+
+def _ensure_fit_score_signal_columns(db: Session) -> None:
+    inspector = inspect(db.get_bind())
+    if "fit_scores" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("fit_scores")}
+    missing_columns = {
+        "required_signals": "JSON",
+        "preferred_signals": "JSON",
+    }
+    for name, column_type in missing_columns.items():
+        if name not in columns:
+            db.execute(text(f"ALTER TABLE fit_scores ADD COLUMN {name} {column_type}"))
 
 
 def _combined_characteristics(profile: Profile) -> list[str]:
