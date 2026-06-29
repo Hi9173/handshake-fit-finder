@@ -15,12 +15,18 @@
     let stableCount = 0;
     const snapshots = [];
     const targetJobCount = requestedJobCount(baseUrl);
+    const initialJobId = jobIdFromUrl(baseUrl);
+    let restoreTrigger = null;
 
     await resetScroll(root);
     await wait(250);
 
     for (let pass = 0; pass < maxPasses; pass += 1) {
-      const visibleJobs = extractor.extractVisibleJobs(root, baseUrl);
+      const extractedJobs = extractor.extractVisibleJobs(root, baseUrl);
+      if (!restoreTrigger && initialJobId) {
+        restoreTrigger = detailTriggerForJob(extractedJobs.find((job) => jobIdFromUrl(job.source_url) === initialJobId));
+      }
+      const visibleJobs = await captureDetailsForVisibleJobs(extractedJobs, root, wait);
       allJobs = extractor.dedupeJobs([...allJobs, ...visibleJobs]);
 
       const snapshot = {
@@ -55,11 +61,83 @@
       await wait(350);
     }
 
+    restoreTrigger?.click?.();
+
     return {
       jobs: targetJobCount ? allJobs.slice(0, targetJobCount) : allJobs,
       passes: snapshots.length,
       snapshots,
     };
+  }
+
+  async function captureDetailsForVisibleJobs(jobs, root, wait) {
+    const enrichedJobs = [];
+    for (const job of jobs) {
+      const trigger = detailTriggerForJob(job);
+      if (!trigger || typeof trigger.click !== "function") {
+        enrichedJobs.push(job);
+        continue;
+      }
+
+      const previousDetail = visibleDetailText(root);
+      trigger.click();
+      const detailText = await waitForChangedDetail(root, wait, previousDetail);
+      enrichedJobs.push(detailText ? { ...job, description: appendUniqueText(job.description, detailText) } : job);
+    }
+    return enrichedJobs;
+  }
+
+  function detailTriggerForJob(job) {
+    return job?.detailTrigger || job?.card || null;
+  }
+
+  async function waitForChangedDetail(root, wait, previousDetail) {
+    let bestDetail = "";
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      expandCollapsedDetails(root);
+      const detailText = visibleDetailText(root);
+      if (detailText && detailText !== previousDetail && isUsefulDetailText(detailText)) {
+        return detailText;
+      }
+      if (detailText && detailText !== previousDetail && detailText.length > bestDetail.length) {
+        bestDetail = detailText;
+      }
+      await wait(250);
+    }
+    return bestDetail;
+  }
+
+  function expandCollapsedDetails(root) {
+    const buttons = Array.from(root.querySelectorAll?.("button") || []);
+    for (const button of buttons) {
+      if (cleanText(button.innerText || button.textContent) === "More") {
+        button.click();
+      }
+    }
+  }
+
+  function visibleDetailText(root) {
+    const text = cleanText(root.body?.innerText || root.body?.textContent || root.innerText || root.textContent);
+    const start = text.search(/\b(job description|minimum requirements|requirements|responsibilities)\b/i);
+    if (start < 0) {
+      return "";
+    }
+    const detailText = text.slice(start);
+    const stop = detailText.search(/\b(similar jobs|alumni in similar roles)\b/i);
+    return stop > 0 ? detailText.slice(0, stop) : detailText;
+  }
+
+  function isUsefulDetailText(text) {
+    return text.length > 180 && !/^loading\.{0,3}$/i.test(text);
+  }
+
+  function appendUniqueText(baseText, extraText) {
+    const base = cleanText(baseText);
+    const extra = cleanText(extraText);
+    if (!extra || base.includes(extra)) {
+      return base;
+    }
+    return `${base}\n${extra}`.trim();
   }
 
   async function defaultWait(ms) {
@@ -145,6 +223,14 @@
     }
   }
 
+  function jobIdFromUrl(url) {
+    try {
+      return new URL(url, "https://app.joinhandshake.com").pathname.match(/\/(?:job-search|stu\/jobs)\/(\d+)/)?.[1] || "";
+    } catch {
+      return "";
+    }
+  }
+
   function describeScrollTarget(target) {
     if (target === global) {
       return "window";
@@ -157,6 +243,10 @@
       scrollHeight: target.scrollHeight || 0,
       clientHeight: target.clientHeight || 0,
     };
+  }
+
+  function cleanText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
   }
 
   const api = {

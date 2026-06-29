@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     database_url: str = "mysql+pymysql://handshake:handshake@127.0.0.1:3307/handshake_fit_finder"
     cors_origins: list[str] = ["http://localhost:5173"]
     cors_origin_regex: str = r"chrome-extension://.*|http://127\.0\.0\.1:5173"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4.1-mini"
+    openai_batch_size: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="HFF_")
 

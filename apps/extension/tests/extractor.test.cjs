@@ -59,6 +59,29 @@ test("extractVisibleJobs builds capture payloads from visible job links", () => 
   );
 });
 
+test("extractVisibleJobs treats Handshake job-search links as job links", () => {
+  const card = fakeCard("Web Development Intern\nKira Jewels\nRemote", "/job-search/11128657?page=1");
+  const root = {
+    querySelectorAll: (selector) => (selector.includes("/job-search/") ? [card.anchor] : []),
+  };
+
+  const jobs = extractVisibleJobs(root, "https://app.joinhandshake.com/job-search/11143320");
+
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].source_url, "https://app.joinhandshake.com/job-search/11128657?page=1");
+});
+
+test("extractVisibleJobs ignores direct jobs links from detail panes", () => {
+  const card = fakeCard("Web Development Intern\nKira Jewels\nRemote", "/jobs/11128657");
+  const root = {
+    querySelectorAll: (selector) => (selector.includes('href*="/jobs/"') ? [card.anchor] : []),
+  };
+
+  const jobs = extractVisibleJobs(root, "https://app.joinhandshake.com/job-search/11128657");
+
+  assert.equal(jobs.length, 0);
+});
+
 test("extractVisibleJobs falls back to job-like cards without anchors", () => {
   const card = {
     textContent: "Product Data Analyst\nNorthstar Analytics\nHybrid - Austin, TX",
@@ -104,6 +127,26 @@ test("extractVisibleJobs combines link jobs with extra card jobs", () => {
     jobs.map((job) => job.title),
     ["Entry Level Data Analyst", "Operations Analyst"],
   );
+});
+
+test("extractVisibleJobs adds visible detail text to the currently open job", () => {
+  const linkCard = fakeCard("Web Development Intern\nKira\nRemote", "/stu/jobs/987");
+  const root = {
+    textContent:
+      "Web Development Intern\nKira\nRemote\nJob Description\nBuild the B2B platform.\nMinimum Requirements\nHTML, CSS, JavaScript, and Git are required.",
+    querySelectorAll: (selector) => {
+      if (selector.includes("a[")) {
+        return [linkCard.anchor];
+      }
+      return [linkCard];
+    },
+  };
+
+  const jobs = extractVisibleJobs(root, "https://app.joinhandshake.com/job-search/987?query=kira");
+
+  assert.equal(jobs.length, 1);
+  assert.match(jobs[0].description, /Minimum Requirements/);
+  assert.match(jobs[0].description, /HTML, CSS, JavaScript, and Git/);
 });
 
 test("extractVisibleJobs ignores Handshake search filter panels", () => {

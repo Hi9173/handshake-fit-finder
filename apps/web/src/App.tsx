@@ -1,18 +1,27 @@
 import {
-  AlertTriangle,
-  BriefcaseBusiness,
   CheckCircle2,
   ExternalLink,
   FileText,
   Radar,
-  Save,
   Search,
-  SlidersHorizontal,
+  Sparkles,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
-import { defaultProfile, type Job, type JobStatus } from "./data/dashboardData";
+import {
+  categoryForStatus,
+  countJobCategories,
+  defaultProfile,
+  filterJobsByCategory,
+  jobCategoryActions,
+  profileSignalMatches,
+  type Job,
+  type JobCategory,
+  type JobStatus,
+} from "./data/dashboardData";
 
 type Profile = typeof defaultProfile;
 
@@ -22,6 +31,9 @@ type ApiProfile = {
   skills: string[];
   locations: string[];
   dealbreakers: string[];
+  resume_characteristics: string[];
+  user_characteristics: string[];
+  characteristics: string[];
   seniority: string;
   resume_filename: string | null;
   resume_uploaded_at: string | null;
@@ -40,26 +52,26 @@ type ApiJob = {
     score: number;
     matched_skills: string[];
     missing_skills: string[];
+    required_signals?: string[];
+    preferred_signals?: string[];
     role_matches: string[];
     penalties: string[];
     summary: string;
   };
 };
 
-function scoreTone(score: number) {
-  if (score >= 85) return "strong";
-  if (score >= 70) return "medium";
-  return "weak";
-}
+const DASHBOARD_REFRESH_MS = 5000;
 
 export function App() {
   const [profile, setProfile] = useState<Profile>(defaultProfile);
-  const [profileDraft, setProfileDraft] = useState(profileToDraft(defaultProfile));
+  const [characteristicDraft, setCharacteristicDraft] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [dataSource, setDataSource] = useState("Waiting for capture");
   const [notice, setNotice] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [movingJobId, setMovingJobId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState<JobCategory>("underReview");
 
   useEffect(() => {
     let isMounted = true;
@@ -81,7 +93,6 @@ export function App() {
         if (isMounted) {
           const mappedProfile = mapProfile(apiProfile);
           setProfile(mappedProfile);
-          setProfileDraft(profileToDraft(mappedProfile));
           setJobs(apiJobs.map(mapJob));
           setDataSource("Local API");
         }
@@ -95,8 +106,13 @@ export function App() {
     }
 
     loadDashboardData();
+    const refreshTimer = window.setInterval(() => {
+      void loadDashboardData();
+    }, DASHBOARD_REFRESH_MS);
+
     return () => {
       isMounted = false;
+      window.clearInterval(refreshTimer);
     };
   }, []);
 
@@ -114,7 +130,6 @@ export function App() {
     ])) as [ApiProfile, ApiJob[]];
     const mappedProfile = mapProfile(apiProfile);
     setProfile(mappedProfile);
-    setProfileDraft(profileToDraft(mappedProfile));
     setJobs(apiJobs.map(mapJob));
     setDataSource("Local API");
   }
@@ -147,50 +162,147 @@ export function App() {
     }
   }
 
-  async function saveProfile() {
+  async function addCharacteristic() {
+    const characteristic = characteristicDraft.trim();
+    if (!characteristic) {
+      return;
+    }
+
     setIsSaving(true);
-    setNotice("Saving profile...");
+    setNotice("Saving signal...");
     try {
+      const userCharacteristics = uniqueTerms([...profile.userCharacteristics, characteristic]);
       const response = await fetch("http://127.0.0.1:8000/api/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: profileDraft.name.trim() || "Local Profile",
-          target_roles: splitTerms(profileDraft.targetRoles),
-          skills: splitTerms(profileDraft.skills),
-          locations: splitTerms(profileDraft.locations),
-          dealbreakers: splitTerms(profileDraft.dealbreakers),
-          seniority: profileDraft.seniority.trim() || "entry",
+          name: profile.name,
+          target_roles: profile.targetRoles,
+          skills: profile.skills,
+          locations: profile.locations,
+          dealbreakers: profile.dealbreakers,
+          seniority: profile.seniority,
+          resume_characteristics: profile.resumeCharacteristics,
+          user_characteristics: userCharacteristics,
         }),
       });
       if (!response.ok) {
         throw new Error(await response.text());
       }
       await refreshDashboardData();
-      setNotice("Profile saved. Jobs were rescored.");
+      setCharacteristicDraft("");
+      setNotice("Signal saved.");
     } catch (_error) {
-      setNotice("Profile save failed.");
+      setNotice("Signal save failed.");
     } finally {
       setIsSaving(false);
     }
   }
 
+  async function deleteSignal(signal: string) {
+    const key = signal.toLowerCase();
+
+    setIsSaving(true);
+    setNotice("Deleting signal...");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile.name,
+          target_roles: profile.targetRoles,
+          skills: profile.skills,
+          locations: profile.locations,
+          dealbreakers: profile.dealbreakers,
+          seniority: profile.seniority,
+          resume_characteristics: profile.resumeCharacteristics.filter((item) => item.toLowerCase() !== key),
+          user_characteristics: profile.userCharacteristics.filter((item) => item.toLowerCase() !== key),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshDashboardData();
+      setNotice("Signal deleted.");
+    } catch (_error) {
+      setNotice("Signal delete failed.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deleteCapturedJobs() {
+    if (jobs.length === 0 || !window.confirm("Delete all captured jobs from the local dashboard?")) {
+      return;
+    }
+
+    setIsSaving(true);
+    setNotice("Deleting captured jobs...");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/jobs", {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshDashboardData();
+      setNotice("Captured jobs deleted.");
+    } catch (_error) {
+      setNotice("Could not delete captured jobs.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function moveJob(jobId: number, status: JobStatus) {
+    setMovingJobId(jobId);
+    setNotice("Moving job...");
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/jobs/${jobId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const movedJob = mapJob((await response.json()) as ApiJob);
+      setJobs((currentJobs) => currentJobs.map((job) => (job.id === movedJob.id ? movedJob : job)));
+      setNotice("Job moved.");
+    } catch (_error) {
+      setNotice("Could not move job.");
+    } finally {
+      setMovingJobId(null);
+    }
+  }
+
   const filteredJobs = useMemo(() => {
+    const categoryJobs = filterJobsByCategory(jobs, activeCategory);
     const query = searchQuery.trim().toLowerCase();
     if (!query) {
-      return jobs;
+      return categoryJobs;
     }
-    return jobs.filter((job) =>
-      [job.title, job.company, job.location, job.description, job.fit.summary, ...job.fit.matchedSkills, ...job.fit.missingSkills]
+    return categoryJobs.filter((job) =>
+      [
+        job.title,
+        job.company,
+        job.location,
+        job.description,
+        job.fit.summary,
+        ...job.fit.matchedSkills,
+        ...job.fit.missingSkills,
+        ...job.fit.requiredSignals,
+        ...job.fit.preferredSignals,
+        ...job.fit.roleMatches,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query),
     );
-  }, [jobs, searchQuery]);
+  }, [activeCategory, jobs, searchQuery]);
   const sortedJobs = useMemo(() => [...filteredJobs].sort((a, b) => b.fit.score - a.fit.score), [filteredJobs]);
-  const averageScore = Math.round(jobs.reduce((total, job) => total + job.fit.score, 0) / Math.max(jobs.length, 1));
-  const savedCount = jobs.filter((job) => job.status === "saved").length;
-  const cautionCount = jobs.filter((job) => job.fit.penalties.length > 0).length;
+  const jobCounts = countJobCategories(jobs);
+  const activeCategoryLabel = categoryTileLabels[activeCategory];
 
   return (
     <main className="app-shell">
@@ -222,109 +334,134 @@ export function App() {
           {notice ? <p className="form-notice">{notice}</p> : null}
         </section>
 
-        <section className="panel">
+        <section className="panel characteristics-panel">
           <div className="panel-heading">
-            <BriefcaseBusiness size={18} aria-hidden="true" />
-            <h2>Profile</h2>
+            <Sparkles size={18} aria-hidden="true" />
+            <h2>Profile Signals</h2>
           </div>
-          <div className="profile-form">
-            <label className="text-field">
-              <span>Name</span>
-              <input
-                value={profileDraft.name}
-                onChange={(event) => setProfileDraft({ ...profileDraft, name: event.target.value })}
-              />
-            </label>
-            <label className="text-field">
-              <span>Target roles</span>
-              <input
-                value={profileDraft.targetRoles}
-                onChange={(event) => setProfileDraft({ ...profileDraft, targetRoles: event.target.value })}
-              />
-            </label>
-            <label className="text-field">
-              <span>Skills</span>
-              <input
-                value={profileDraft.skills}
-                onChange={(event) => setProfileDraft({ ...profileDraft, skills: event.target.value })}
-              />
-            </label>
-            <button className="primary-button" type="button" disabled={isSaving} onClick={saveProfile}>
-              <Save size={16} aria-hidden="true" />
-              Save profile
+          <div className="characteristic-legend" aria-label="Characteristic source legend">
+            <span>
+              <span className="source-dot resume" aria-hidden="true" />
+              From resume
+            </span>
+            <span>
+              <span className="source-dot user" aria-hidden="true" />
+              Added by you
+            </span>
+          </div>
+          {profile.characteristics.length > 0 ? (
+            <ul className="characteristic-list">
+              {profile.characteristics.map((characteristic) => {
+                const source = characteristicSource(characteristic, profile);
+                const sourceLabel = source === "user" ? "added by you" : "from resume";
+                return (
+                  <li
+                    aria-label={`${characteristic}, ${sourceLabel}`}
+                    className={`characteristic-chip ${source}`}
+                    key={characteristic}
+                    title={`${characteristic} (${sourceLabel})`}
+                  >
+                    <button
+                      aria-label={`Delete ${characteristic}`}
+                      className="delete-signal-button"
+                      disabled={isSaving}
+                      onClick={() => deleteSignal(characteristic)}
+                      title={`Delete ${characteristic}`}
+                      type="button"
+                    >
+                      <X size={11} aria-hidden="true" />
+                    </button>
+                    <span>{characteristic}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="empty-copy">Upload a resume or add a profile signal.</p>
+          )}
+          <form className="characteristic-form" onSubmit={(event) => event.preventDefault()}>
+            <input
+              aria-label="Add profile signal"
+              placeholder="Add profile signal"
+              value={characteristicDraft}
+              onChange={(event) => setCharacteristicDraft(event.target.value)}
+            />
+            <button
+              className="primary-button"
+              type="button"
+              disabled={isSaving || !characteristicDraft.trim()}
+              onClick={addCharacteristic}
+            >
+              Add
             </button>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <SlidersHorizontal size={18} aria-hidden="true" />
-            <h2>Preferences</h2>
-          </div>
-          <dl className="definition-list">
-            <div>
-              <dt>Locations</dt>
-              <dd>
-                <input
-                  className="inline-input"
-                  value={profileDraft.locations}
-                  onChange={(event) => setProfileDraft({ ...profileDraft, locations: event.target.value })}
-                />
-              </dd>
-            </div>
-            <div>
-              <dt>Seniority</dt>
-              <dd>
-                <input
-                  className="inline-input"
-                  value={profileDraft.seniority}
-                  onChange={(event) => setProfileDraft({ ...profileDraft, seniority: event.target.value })}
-                />
-              </dd>
-            </div>
-            <div>
-              <dt>Dealbreakers</dt>
-              <dd>
-                <input
-                  className="inline-input"
-                  value={profileDraft.dealbreakers}
-                  onChange={(event) => setProfileDraft({ ...profileDraft, dealbreakers: event.target.value })}
-                />
-              </dd>
-            </div>
-          </dl>
+          </form>
         </section>
       </aside>
 
       <section className="workspace" aria-label="Ranked jobs">
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">Private local dashboard</p>
-            <h2>Ranked jobs from your captured session</h2>
-            <p className="data-source">{dataSource}</p>
+            <p className={dataSource === "Local API" ? "connection-status ready" : "connection-status"}>
+              <span aria-hidden="true" />
+              {dataSource}
+            </p>
+            <h2>Find the roles worth your next move</h2>
           </div>
-          <label className="search-box">
-            <Search size={17} aria-hidden="true" />
-            <input
-              aria-label="Search jobs"
-              placeholder="Search title, company, skill"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </label>
+          <div className="header-actions">
+            <label className="search-box">
+              <Search size={17} aria-hidden="true" />
+              <input
+                aria-label="Search jobs"
+                placeholder="Search title, company, skill"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </label>
+            <button
+              aria-label="Delete all captured jobs"
+              className="danger-button"
+              disabled={isSaving || jobs.length === 0}
+              onClick={deleteCapturedJobs}
+              title="Delete all captured jobs"
+              type="button"
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              Clear jobs
+            </button>
+          </div>
         </header>
 
         <section className="metrics" aria-label="Job metrics">
-          <Metric label="Captured" value={jobs.length.toString()} />
-          <Metric label="Average fit" value={`${averageScore}%`} />
-          <Metric label="Saved" value={savedCount.toString()} />
-          <Metric label="Cautions" value={cautionCount.toString()} />
+          <Metric
+            active={activeCategory === "underReview"}
+            label="Under Review"
+            onClick={() => setActiveCategory("underReview")}
+            value={jobCounts.underReview.toString()}
+          />
+          <Metric
+            active={activeCategory === "applied"}
+            label="Applied"
+            onClick={() => setActiveCategory("applied")}
+            value={jobCounts.applied.toString()}
+          />
+          <Metric
+            active={activeCategory === "saved"}
+            label="Saved"
+            onClick={() => setActiveCategory("saved")}
+            value={jobCounts.saved.toString()}
+          />
+          <Metric
+            active={activeCategory === "skipped"}
+            label="Skipped"
+            onClick={() => setActiveCategory("skipped")}
+            value={jobCounts.skipped.toString()}
+          />
         </section>
 
         <section className="job-list" aria-label="Fit-ranked job list">
           {sortedJobs.length === 0 ? (
             <article className="empty-state">
-              <h3>{jobs.length === 0 ? "No captured jobs yet" : "No matching jobs"}</h3>
+              <h3>{jobs.length === 0 ? "No captured jobs yet" : `No ${activeCategoryLabel} jobs`}</h3>
               <p>
                 {jobs.length === 0
                   ? "Open Handshake, reload the extension, and click Capture visible jobs to populate this dashboard."
@@ -334,6 +471,8 @@ export function App() {
           ) : (
             sortedJobs.map((job) => {
               const display = jobDisplay(job);
+              const signals = jobSignals(job);
+              const actions = availableJobActions(job.status);
               return (
                 <article className="job-card" key={job.id}>
                   <div className="job-main">
@@ -343,35 +482,50 @@ export function App() {
                       </div>
                       <dl className="job-meta">
                         <div>
-                          <dt>Company Name</dt>
+                          <dt>Company</dt>
                           <dd>{display.company}</dd>
                         </div>
                         <div>
-                          <dt>Company Location</dt>
+                          <dt>Location</dt>
                           <dd>{display.location}</dd>
                         </div>
                         <div>
-                          <dt>Remote / In-person</dt>
+                          <dt>Mode</dt>
                           <dd>{display.workMode}</dd>
                         </div>
                         <div>
-                          <dt>Full-Time/Part-Time/Internship</dt>
+                          <dt>Type</dt>
                           <dd>{display.employmentType}</dd>
                         </div>
                       </dl>
                     </div>
-                    <div className={`score-badge ${scoreTone(job.fit.score)}`}>
-                      <span>{job.fit.score}%</span>
-                      <small>fit</small>
+                    <div className="job-category-actions" aria-label={`Move ${display.role} to another category`}>
+                      {actions.map((action) => (
+                        <button
+                          disabled={movingJobId === job.id}
+                          key={action.category}
+                          onClick={() => moveJob(job.id, action.status)}
+                          type="button"
+                        >
+                          {action.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  <p className="summary">{job.fit.summary}</p>
-
                   <div className="fit-grid">
-                    <FitColumn title="Matched" items={job.fit.matchedSkills} icon="check" />
-                    <FitColumn title="Missing" items={job.fit.missingSkills} icon="warn" />
-                    <FitColumn title="Cautions" items={job.fit.penalties} icon="warn" />
+                    <SignalColumn
+                      title="Required Signals"
+                      items={signals.required}
+                      icon="required"
+                      profileSignals={profile.characteristics}
+                    />
+                    <SignalColumn
+                      title="Preferred Signals"
+                      items={signals.preferred}
+                      icon="preferred"
+                      profileSignals={profile.characteristics}
+                    />
                   </div>
 
                   <div className="job-actions">
@@ -397,6 +551,9 @@ function mapProfile(profile: ApiProfile): Profile {
     skills: profile.skills,
     locations: profile.locations,
     dealbreakers: profile.dealbreakers,
+    resumeCharacteristics: profile.resume_characteristics,
+    userCharacteristics: profile.user_characteristics,
+    characteristics: profile.characteristics,
     seniority: profile.seniority,
     resumeFilename: profile.resume_filename,
     resumeUploadedAt: profile.resume_uploaded_at,
@@ -417,6 +574,8 @@ function mapJob(job: ApiJob): Job {
       score: job.fit.score,
       matchedSkills: job.fit.matched_skills,
       missingSkills: job.fit.missing_skills,
+      requiredSignals: job.fit.required_signals ?? [],
+      preferredSignals: job.fit.preferred_signals ?? [],
       roleMatches: job.fit.role_matches,
       penalties: job.fit.penalties,
       summary: job.fit.summary,
@@ -424,31 +583,36 @@ function mapJob(job: ApiJob): Job {
   };
 }
 
-function profileToDraft(profile: Profile) {
-  return {
-    name: profile.name,
-    targetRoles: profile.targetRoles.join(", "),
-    skills: profile.skills.join(", "),
-    locations: profile.locations.join(", "),
-    dealbreakers: profile.dealbreakers.join(", "),
-    seniority: profile.seniority,
-  };
-}
-
-function splitTerms(value: string) {
-  return value
-    .split(",")
-    .map((term) => term.trim())
-    .filter(Boolean);
-}
-
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function characteristicSource(characteristic: string, profile: Profile) {
+  const key = characteristic.toLowerCase();
+  if (profile.userCharacteristics.some((item) => item.toLowerCase() === key)) {
+    return "user";
+  }
+  return "resume";
+}
+
+function uniqueTerms(terms: string[]) {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const term of terms) {
+    const cleaned = term.trim();
+    const key = cleaned.toLowerCase();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(cleaned);
+  }
+  return unique;
+}
+
 function jobDisplay(job: Job) {
   const text = [job.title, job.company, job.location, job.description].join(" ");
-  const location = cleanValue(extractLocation(text) || job.location);
+  const location = cleanValue(job.location);
   return {
     role: cleanValue(extractRole(job), "Unknown role"),
     company: cleanValue(job.company),
@@ -456,6 +620,25 @@ function jobDisplay(job: Job) {
     workMode: /\bremote\b/i.test(text) ? "Remote" : location === "Unknown" ? "Unknown" : "In-person",
     employmentType: extractEmploymentType(text),
   };
+}
+
+function jobSignals(job: Job) {
+  return {
+    required: uniqueTerms(job.fit.requiredSignals),
+    preferred: uniqueTerms(job.fit.preferredSignals),
+  };
+}
+
+const categoryTileLabels: Record<JobCategory, string> = {
+  underReview: "Under Review",
+  applied: "Applied",
+  saved: "Saved",
+  skipped: "Skipped",
+};
+
+function availableJobActions(status: JobStatus) {
+  const currentCategory = categoryForStatus(status);
+  return jobCategoryActions.filter((action) => action.category !== currentCategory);
 }
 
 function extractRole(job: Job) {
@@ -476,10 +659,6 @@ function extractRole(job: Job) {
   );
 }
 
-function extractLocation(text: string) {
-  return text.match(/(?:^|[^A-Za-z])([A-Z][a-zA-Z .'-]+,\s*[A-Z]{2})\b/)?.[1] || "";
-}
-
 function extractEmploymentType(text: string) {
   if (/\binternship\b/i.test(text)) return "Internship";
   if (/\bpart[- ]time\b/i.test(text)) return "Part-Time";
@@ -492,31 +671,66 @@ function cleanValue(value: string, fallback = "Unknown") {
   return cleaned || fallback;
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  active,
+  label,
+  onClick,
+  value,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  value: string;
+}) {
   return (
-    <div className="metric">
+    <button aria-pressed={active} className={active ? "metric active" : "metric"} onClick={onClick} type="button">
       <span>{label}</span>
       <strong>{value}</strong>
-    </div>
+    </button>
   );
 }
 
-function FitColumn({ title, items, icon }: { title: string; items: string[]; icon: "check" | "warn" }) {
+function SignalColumn({
+  title,
+  items,
+  icon,
+  profileSignals,
+}: {
+  title: string;
+  items: string[];
+  icon: "required" | "preferred";
+  profileSignals: string[];
+}) {
+  const sortedItems = matchedSignalsFirst(items, profileSignals);
+
   return (
     <div className="fit-column">
       <h4>
-        {icon === "check" ? <CheckCircle2 size={15} aria-hidden="true" /> : <AlertTriangle size={15} aria-hidden="true" />}
+        {icon === "required" ? <CheckCircle2 size={15} aria-hidden="true" /> : <Sparkles size={15} aria-hidden="true" />}
         {title}
       </h4>
       {items.length > 0 ? (
         <ul>
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
+          {sortedItems.map((item) => {
+            const tone = profileSignalMatches(item, profileSignals) ? "matched" : "missing";
+            return (
+              <li className={tone} key={item}>
+                {item}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p>None</p>
       )}
     </div>
   );
+}
+
+function matchedSignalsFirst(items: string[], profileSignals: string[]) {
+  return [...items].sort((left, right) => {
+    const leftMatched = profileSignalMatches(left, profileSignals);
+    const rightMatched = profileSignalMatches(right, profileSignals);
+    return Number(rightMatched) - Number(leftMatched);
+  });
 }

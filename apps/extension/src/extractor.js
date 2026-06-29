@@ -1,5 +1,5 @@
 (function attachExtractor(global) {
-  const JOB_LINK_SELECTOR = 'a[href*="/stu/jobs/"], a[href*="/jobs/"]';
+  const JOB_LINK_SELECTOR = 'a[href*="/job-search/"], a[href*="/stu/jobs/"]';
   const SAVE_JOB_BUTTON_SELECTOR = 'button[aria-label^="Save "]';
   const JOB_CARD_SELECTOR = [
     "article",
@@ -28,7 +28,11 @@
       .map((button) => extractJobFromSaveButton(button, baseUrl))
       .filter((job) => looksLikeJob(job));
 
-    return dedupeJobs([...jobsFromAnchors, ...jobsFromCards, ...jobsFromSaveButtons]);
+    return enrichCurrentJobDetails(
+      dedupeJobs([...jobsFromAnchors, ...jobsFromCards, ...jobsFromSaveButtons]),
+      root,
+      baseUrl,
+    );
   }
 
   function extractJobFromAnchor(anchor, baseUrl) {
@@ -48,6 +52,7 @@
       source_url: sourceUrl,
       source: "handshake-extension",
       card,
+      detailTrigger: anchor,
     };
   }
 
@@ -81,6 +86,7 @@
       source_url: sourceUrl,
       source: "handshake-extension",
       card,
+      detailTrigger: link || card,
     };
   }
 
@@ -123,6 +129,48 @@
       unique.push(job);
     }
     return unique;
+  }
+
+  function enrichCurrentJobDetails(jobs, root, baseUrl) {
+    const currentJobId = jobIdFromUrl(baseUrl);
+    const detailText = visibleDetailText(root);
+    if (!currentJobId || !detailText) {
+      return jobs;
+    }
+
+    return jobs.map((job) => {
+      if (jobIdFromUrl(job.source_url) !== currentJobId) {
+        return job;
+      }
+      return {
+        ...job,
+        description: appendUniqueText(job.description, detailText),
+      };
+    });
+  }
+
+  function visibleDetailText(root) {
+    const text = cleanText(root.body?.textContent || root.textContent);
+    const match = text.match(/\b(job description|minimum requirements|requirements|responsibilities)\b/i);
+    return match ? text.slice(match.index) : "";
+  }
+
+  function jobIdFromUrl(url) {
+    try {
+      const parsed = new URL(url, "https://app.joinhandshake.com");
+      return parsed.pathname.match(/\/(?:stu\/jobs|jobs|job-search)\/(\d+)/)?.[1] || "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function appendUniqueText(baseText, extraText) {
+    const base = cleanText(baseText);
+    const extra = cleanText(extraText);
+    if (!extra || base.includes(extra)) {
+      return base;
+    }
+    return `${base}\n${extra}`.trim();
   }
 
   function closestJobCard(anchor) {

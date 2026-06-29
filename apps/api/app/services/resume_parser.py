@@ -5,6 +5,7 @@ import re
 from fastapi import HTTPException, UploadFile
 
 from app.services.scoring import COMMON_JOB_SKILLS
+from app.services.resume_extractor import extract_resume_facts
 
 ALLOWED_EXTENSIONS = {".md", ".tex", ".pdf"}
 RESUME_DIR = Path(__file__).resolve().parents[2] / "storage" / "resume" / "active"
@@ -20,6 +21,7 @@ class ParsedResume:
     target_roles: list[str]
     skills: list[str]
     locations: list[str]
+    characteristics: list[str]
     seniority: str
 
 
@@ -37,18 +39,29 @@ async def parse_resume_upload(file: UploadFile) -> ParsedResume:
     if not text:
         raise HTTPException(status_code=400, detail="Could not extract text from resume.")
 
+    extracted = extract_resume_facts(text)
+    target_roles = extracted.target_roles if extracted else _extract_roles(text)
+    skills = extracted.skills if extracted else _extract_skills(text)
+    locations = extracted.locations if extracted else _extract_locations(text)
+    characteristics = (
+        _dedupe([*extracted.skills, *extracted.characteristics])
+        if extracted
+        else extract_characteristics(text)
+    )
+    seniority = extracted.seniority if extracted and extracted.seniority != "unknown" else "entry"
+
     RESUME_DIR.mkdir(parents=True, exist_ok=True)
     path = RESUME_DIR / filename
     path.write_bytes(content)
-
     return ParsedResume(
         filename=filename,
         path=str(path),
         text=text,
-        target_roles=_extract_roles(text),
-        skills=_extract_skills(text),
-        locations=_extract_locations(text),
-        seniority="entry",
+        target_roles=target_roles,
+        skills=skills,
+        locations=locations,
+        characteristics=characteristics,
+        seniority=seniority,
     )
 
 
@@ -86,6 +99,20 @@ def _extract_roles(text: str) -> list[str]:
 def _extract_locations(text: str) -> list[str]:
     normalized = _normalize(text)
     return [location for location in LOCATION_KEYWORDS if _contains_term(normalized, location)]
+
+
+def extract_characteristics(text: str) -> list[str]:
+    normalized = _normalize(text)
+    characteristics = list(_extract_skills(text))
+    if "recent graduate" in normalized or "new graduate" in normalized or "new grad" in normalized:
+        characteristics.append("New graduate")
+    if "willing to relocate" in normalized or "open to relocate" in normalized or "open to relocation" in normalized:
+        characteristics.append("Willing to relocate")
+    return list(dict.fromkeys(characteristics))
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value.strip()))
 
 
 def _normalize(value: str) -> str:

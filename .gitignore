@@ -11,6 +11,7 @@ coverage/
 *.tsbuildinfo
 *.db
 debug-artifacts/
+output/
 apps/api/storage/
 apps/api/.mysql-data/
 apps/api/*.sock

@@ -20,6 +20,8 @@ def get_or_create_profile(db: Session) -> Profile:
         skills=DEFAULT_PROFILE.skills,
         locations=DEFAULT_PROFILE.locations,
         dealbreakers=DEFAULT_PROFILE.dealbreakers,
+        resume_characteristics=[],
+        user_characteristics=[],
         seniority=DEFAULT_PROFILE.seniority,
     )
     db.add(profile)
@@ -41,11 +43,13 @@ def profile_input(profile: Profile) -> ProfileInput:
     )
 
 
-def zero_resume_score() -> ScoreResult:
+def zero_resume_score(required_signals: list[str] | None = None, preferred_signals: list[str] | None = None) -> ScoreResult:
     return ScoreResult(
         score=0,
         matched_skills=[],
         missing_skills=[],
+        required_signals=required_signals or [],
+        preferred_signals=preferred_signals or [],
         role_matches=[],
         penalties=[],
         summary=UPLOAD_RESUME_SUMMARY,
