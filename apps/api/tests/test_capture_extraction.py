@@ -73,6 +73,7 @@ class CaptureExtractionTests(unittest.TestCase):
 
     def test_capture_replaces_handshake_metadata_in_company_and_location(self):
         extracted = ExtractedJobFacts(
+            title="Fullstack Engineer Intern",
             company="fAIshion Inc",
             location="Remote",
             work_mode="remote",
@@ -101,6 +102,7 @@ class CaptureExtractionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         job = response.json()[0]
+        self.assertEqual(job["title"], "Fullstack Engineer Intern")
         self.assertEqual(job["company"], "fAIshion Inc")
         self.assertEqual(job["location"], "Remote")
 

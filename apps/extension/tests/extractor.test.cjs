@@ -82,7 +82,7 @@ test("extractVisibleJobs ignores direct jobs links from detail panes", () => {
   assert.equal(jobs.length, 0);
 });
 
-test("extractVisibleJobs falls back to job-like cards without anchors", () => {
+test("extractVisibleJobs ignores job-like cards without anchors", () => {
   const card = {
     textContent: "Product Data Analyst\nNorthstar Analytics\nHybrid - Austin, TX",
     querySelector: () => null,
@@ -98,14 +98,10 @@ test("extractVisibleJobs falls back to job-like cards without anchors", () => {
 
   const jobs = extractVisibleJobs(root, "https://app.joinhandshake.com/stu/postings");
 
-  assert.equal(jobs.length, 1);
-  assert.equal(jobs[0].title, "Product Data Analyst");
-  assert.equal(jobs[0].company, "Northstar Analytics");
-  assert.equal(jobs[0].location, "Hybrid - Austin, TX");
-  assert.equal(jobs[0].source_url, "https://app.joinhandshake.com/stu/postings#product-data-analyst-northstar-analytics");
+  assert.equal(jobs.length, 0);
 });
 
-test("extractVisibleJobs combines link jobs with extra card jobs", () => {
+test("extractVisibleJobs ignores extra card jobs when job links exist", () => {
   const linkCard = fakeCard("Entry Level Data Analyst\nBright Metrics\nRemote", "/stu/jobs/123");
   const cardOnly = {
     textContent: "Operations Analyst\nCivic Systems\nChicago, IL",
@@ -122,10 +118,10 @@ test("extractVisibleJobs combines link jobs with extra card jobs", () => {
 
   const jobs = extractVisibleJobs(root, "https://app.joinhandshake.com/job-search/11070797");
 
-  assert.equal(jobs.length, 2);
+  assert.equal(jobs.length, 1);
   assert.deepEqual(
     jobs.map((job) => job.title),
-    ["Entry Level Data Analyst", "Operations Analyst"],
+    ["Entry Level Data Analyst"],
   );
 });
 

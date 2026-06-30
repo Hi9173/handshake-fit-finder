@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import delete, inspect, select, text
 from sqlalchemy.orm import Session
@@ -17,6 +20,7 @@ MAX_COMPANY_LENGTH = 255
 MAX_LOCATION_LENGTH = 255
 MAX_SOURCE_URL_LENGTH = 1000
 MAX_SOURCE_LENGTH = 80
+DEBUG_LOG_PATH = Path(__file__).resolve().parents[2] / "storage" / "extension-debug.jsonl"
 
 
 @router.get("/profile", response_model=ProfileRead)
@@ -39,9 +43,12 @@ def update_profile(update: ProfileUpdate, db: Session = Depends(get_db)) -> Prof
     profile.dealbreakers = update.dealbreakers
     if update.resume_characteristics is not None:
         profile.resume_characteristics = _dedupe_terms(update.resume_characteristics)
+        if profile.resume_characteristics == []:
+            profile.resume_text = None
     if update.user_characteristics is not None:
         profile.user_characteristics = _dedupe_terms(update.user_characteristics)
     profile.seniority = update.seniority
+    profile.use_deterministic_extraction = update.use_deterministic_extraction
     _rescore_all_jobs(db, profile)
     db.commit()
     db.refresh(profile)
@@ -103,7 +110,7 @@ def update_job_status(job_id: int, update: JobStatusUpdate, db: Session = Depend
 def score_new_job(job: JobCreate, db: Session = Depends(get_db)) -> JobRead:
     _ensure_schema(db)
     profile = get_or_create_profile(db)
-    result = _score_for_job(profile, job)
+    result = _score_for_job_with_extraction(profile, job)
     return JobRead(id=999, **job.model_dump(), fit=result.__dict__)
 
 
@@ -111,10 +118,19 @@ def score_new_job(job: JobCreate, db: Session = Depends(get_db)) -> JobRead:
 def capture_visible_jobs(batch: JobCaptureBatch, db: Session = Depends(get_db)) -> list[JobRead]:
     _ensure_schema(db)
     profile = get_or_create_profile(db)
-    extracted_facts = extract_job_facts(batch.jobs)
+    extracted_facts = _extract_job_facts(profile, batch.jobs)
     captured = [_upsert_job(db, profile, job, extracted) for job, extracted in zip(batch.jobs, extracted_facts)]
     db.commit()
     return sorted((_serialize_job(job, profile) for job in captured), key=lambda item: item.fit.score, reverse=True)
+
+
+@router.post("/extension/debug-log")
+def write_extension_debug_log(payload: dict) -> dict[str, str]:
+    DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"logged_at": utc_now().isoformat(), "payload": payload}
+    with DEBUG_LOG_PATH.open("a", encoding="utf-8") as log_file:
+        log_file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return {"path": str(DEBUG_LOG_PATH)}
 
 
 def _upsert_job(db: Session, profile: Profile, job_input: JobCreate, extracted: ExtractedJobFacts | None = None) -> Job:
@@ -161,6 +177,7 @@ def _apply_extracted_metadata(job_input: JobCreate, extracted: ExtractedJobFacts
         return job_input
     return job_input.model_copy(
         update={
+            "title": extracted.title or job_input.title,
             "company": extracted.company,
             "location": extracted.location,
         }
@@ -211,8 +228,8 @@ def _score_for_job(profile: Profile, job: JobCreate, extracted: ExtractedJobFact
 
 def _rescore_all_jobs(db: Session, profile: Profile) -> None:
     jobs = db.scalars(select(Job)).all()
-    for job in jobs:
-        job_input = JobCreate(
+    job_inputs = [
+        JobCreate(
             title=job.title,
             company=job.company,
             location=job.location,
@@ -220,7 +237,16 @@ def _rescore_all_jobs(db: Session, profile: Profile) -> None:
             source_url=job.source_url,
             source=job.source,
         )
-        score = _score_for_job(profile, job_input)
+        for job in jobs
+    ]
+    extracted_facts = _extract_job_facts(profile, job_inputs)
+    for job, job_input, extracted in zip(jobs, job_inputs, extracted_facts):
+        if extracted is not None:
+            job_input = _apply_extracted_metadata(job_input, extracted)
+            job.title = job_input.title
+            job.company = job_input.company
+            job.location = job_input.location
+        score = _score_for_job(profile, job_input, extracted)
         if job.score is None:
             job.score = FitScore(job_id=job.id, **score.__dict__)
         else:
@@ -233,6 +259,16 @@ def _rescore_all_jobs(db: Session, profile: Profile) -> None:
             job.score.penalties = score.penalties
             job.score.summary = score.summary
     db.flush()
+
+
+def _score_for_job_with_extraction(profile: Profile, job: JobCreate):
+    return _score_for_job(profile, job, _extract_job_facts(profile, [job])[0])
+
+
+def _extract_job_facts(profile: Profile, jobs: list[JobCreate]) -> list[ExtractedJobFacts | None]:
+    if profile.use_deterministic_extraction:
+        return [None] * len(jobs)
+    return extract_job_facts(jobs)
 
 
 def _serialize_profile(profile: Profile) -> ProfileRead:
@@ -250,6 +286,7 @@ def _serialize_profile(profile: Profile) -> ProfileRead:
         resume_filename=profile.resume_filename,
         resume_uploaded_at=profile.resume_uploaded_at,
         has_resume=has_resume(profile),
+        use_deterministic_extraction=profile.use_deterministic_extraction,
     )
 
 
@@ -315,6 +352,7 @@ def _ensure_profile_resume_columns(db: Session) -> None:
         "resume_uploaded_at": "DATETIME",
         "resume_characteristics": "JSON",
         "user_characteristics": "JSON",
+        "use_deterministic_extraction": "BOOLEAN DEFAULT 0",
     }
     for name, column_type in missing_columns.items():
         if name not in columns:

@@ -8,7 +8,7 @@ from app.schemas import JobCreate
 
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
-MAX_DESCRIPTION_CHARS = 6000
+MAX_DESCRIPTION_CHARS = 12000
 NON_TECHNICAL_SKILLS = {
     "communication",
     "written communication",
@@ -41,6 +41,7 @@ NON_TECHNICAL_SKILLS = {
 
 @dataclass(frozen=True)
 class ExtractedJobFacts:
+    title: str = ""
     company: str = ""
     location: str = ""
     work_mode: str = "unknown"
@@ -98,10 +99,16 @@ def _payload(jobs: list[JobCreate], model: str) -> dict:
                     "from another job in the same batch. "
                     "If a title or description starts with a glued company name immediately followed by the role, "
                     "prefer that exact leading company name. "
-                    "required_skills and preferred_skills must include only concrete technical skills, tools, "
-                    "languages, frameworks, platforms, databases, cloud services, APIs, developer workflows, "
-                    "or domain-specific technical methods. Do not include work mode, employment type, or generic "
-                    "professional skills such as communication, teamwork, organization, leadership, self-starter, "
+                    "Return the actual role title, without company names, locations, pay, dates, or badges; "
+                    "replace placeholder titles like Unknown role when the description reveals the role. "
+                    "Treat required_skills and preferred_skills as profile match signals, not only named tools. "
+                    "Include concrete technical skills, tools, languages, frameworks, platforms, databases, cloud "
+                    "services, APIs, developer workflows, domain-specific technical methods, and hard credentials "
+                    "or technical-adjacent requirements such as Bachelor's degree, programming language experience, "
+                    "healthcare technology, or AI application experience. Only put a signal in required_skills if "
+                    "the posting explicitly requires it; do not promote background context or preferred-only "
+                    "qualifications into required_skills. Do not include work mode, employment type, or generic "
+                    "soft skills such as communication, teamwork, organization, leadership, self-starter, "
                     "problem-solving, curiosity, attention to detail, time management, or willingness to learn."
                 ),
             },
@@ -124,6 +131,7 @@ def _payload(jobs: list[JobCreate], model: str) -> dict:
                                 "additionalProperties": False,
                                 "required": [
                                     "index",
+                                    "title",
                                     "company",
                                     "location",
                                     "work_mode",
@@ -134,6 +142,7 @@ def _payload(jobs: list[JobCreate], model: str) -> dict:
                                 ],
                                 "properties": {
                                     "index": {"type": "integer"},
+                                    "title": {"type": "string"},
                                     "company": {"type": "string"},
                                     "location": {"type": "string"},
                                     "work_mode": {
@@ -177,6 +186,7 @@ def _parse_response(body: bytes, job_count: int) -> list[ExtractedJobFacts | Non
         index = item.get("index")
         if isinstance(index, int) and 0 <= index < job_count:
             facts[index] = ExtractedJobFacts(
+                title=_clean(item.get("title", "")),
                 company=_clean(item.get("company", "")),
                 location=_clean(item.get("location", "")),
                 work_mode=_clean(item.get("work_mode", "unknown")) or "unknown",

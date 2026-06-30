@@ -26,6 +26,7 @@ class ProfileRead(BaseModel):
     resume_filename: str | None = None
     resume_uploaded_at: datetime | None = None
     has_resume: bool = False
+    use_deterministic_extraction: bool = False
 
 
 class ProfileUpdate(BaseModel):
@@ -37,6 +38,7 @@ class ProfileUpdate(BaseModel):
     resume_characteristics: list[str] | None = None
     user_characteristics: list[str] | None = None
     seniority: str = "entry"
+    use_deterministic_extraction: bool = False
 
 
 class JobCreate(BaseModel):

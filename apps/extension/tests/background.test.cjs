@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { captureJobs } = require("../src/background.js");
+const { captureJobs, writeDebugLog } = require("../src/background.js");
 
 test("captureJobs posts visible jobs to the local API", async () => {
   const calls = [];
@@ -37,4 +37,23 @@ test("captureJobs throws a useful error when the local API rejects the request",
     () => captureJobs([{ title: "Data Analyst" }], fakeFetch),
     /Local API returned 500: database unavailable/,
   );
+});
+
+test("writeDebugLog posts capture diagnostics to the local API", async () => {
+  const calls = [];
+  const fakeFetch = async (url, options) => {
+    calls.push({ url, options });
+    return {
+      ok: true,
+      json: async () => ({ path: "storage/extension-debug.jsonl" }),
+    };
+  };
+
+  const result = await writeDebugLog({ phase: "captured", detailDebug: [{ status: "timeout_for_detail_to_load" }] }, fakeFetch);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://127.0.0.1:8000/api/extension/debug-log");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body).detailDebug[0].status, "timeout_for_detail_to_load");
+  assert.equal(result.path, "storage/extension-debug.jsonl");
 });

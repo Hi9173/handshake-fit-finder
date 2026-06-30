@@ -22,6 +22,7 @@ class FakeResponse:
                         "jobs": [
                             {
                                 "index": 0,
+                                "title": "Software Engineer Intern",
                                 "company": "Kira Labs",
                                 "location": "Remote",
                                 "work_mode": "remote",
@@ -55,6 +56,7 @@ class JobExtractorTests(unittest.TestCase):
             facts,
             [
                 ExtractedJobFacts(
+                    title="Software Engineer Intern",
                     company="Kira Labs",
                     location="Remote",
                     work_mode="remote",
@@ -68,6 +70,9 @@ class JobExtractorTests(unittest.TestCase):
         sent = json.loads(urlopen.call_args.args[0].data)
         self.assertEqual(sent["model"], "gpt-test")
         self.assertIn("Remote internship using Python", sent["input"][1]["content"])
+        schema = sent["text"]["format"]["schema"]["properties"]["jobs"]["items"]
+        self.assertIn("title", schema["required"])
+        self.assertIn("title", schema["properties"])
 
     def test_filters_non_technical_and_mode_terms_from_skill_signals(self):
         facts = ExtractedJobFacts(
@@ -110,6 +115,30 @@ class JobExtractorTests(unittest.TestCase):
         system_prompt = sent["input"][0]["content"]
         self.assertIn("Process each job independently", system_prompt)
         self.assertIn("If a title or description starts with a glued company name immediately followed by the role", system_prompt)
+        self.assertIn("Return the actual role title", system_prompt)
+
+    def test_prompt_extracts_required_signals_beyond_named_tools(self):
+        settings = SimpleNamespace(openai_api_key="key", openai_model="gpt-test", openai_batch_size=10)
+        jobs = [JobCreate(title="Software Engineer", company="", location="", description="Bachelor's degree required.")]
+
+        with patch("app.services.job_extractor.urlopen", return_value=FakeResponse()) as urlopen:
+            extract_job_facts(jobs, settings)
+
+        system_prompt = json.loads(urlopen.call_args.args[0].data)["input"][0]["content"]
+        self.assertIn("Bachelor's degree", system_prompt)
+        self.assertIn("programming language experience", system_prompt)
+        self.assertIn("Only put a signal in required_skills", system_prompt)
+
+    def test_sends_long_raw_job_details_to_openai(self):
+        settings = SimpleNamespace(openai_api_key="key", openai_model="gpt-test", openai_batch_size=10)
+        jobs = [JobCreate(title="Engineer", company="", location="", description="x" * 13000)]
+
+        with patch("app.services.job_extractor.urlopen", return_value=FakeResponse()) as urlopen:
+            extract_job_facts(jobs, settings)
+
+        sent = json.loads(urlopen.call_args.args[0].data)
+        user_payload = json.loads(sent["input"][1]["content"])
+        self.assertEqual(len(user_payload["jobs"][0]["description"]), 12000)
 
 
 if __name__ == "__main__":

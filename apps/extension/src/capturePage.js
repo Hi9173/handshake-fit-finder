@@ -3,108 +3,172 @@
     extractor,
     root,
     baseUrl,
-    maxPasses = 18,
-    stablePasses = 2,
     wait = defaultWait,
-    scroll = defaultScroll,
-    resetScroll = defaultResetScroll,
     onProgress = () => {},
   }) {
-    let allJobs = [];
-    let lastTotal = 0;
-    let stableCount = 0;
     const snapshots = [];
-    const targetJobCount = requestedJobCount(baseUrl);
     const initialJobId = jobIdFromUrl(baseUrl);
-    let restoreTrigger = null;
+    const detailDebug = [];
 
-    await resetScroll(root);
-    await wait(250);
-
-    for (let pass = 0; pass < maxPasses; pass += 1) {
-      const extractedJobs = extractor.extractVisibleJobs(root, baseUrl);
-      if (!restoreTrigger && initialJobId) {
-        restoreTrigger = detailTriggerForJob(extractedJobs.find((job) => jobIdFromUrl(job.source_url) === initialJobId));
-      }
-      const visibleJobs = await captureDetailsForVisibleJobs(extractedJobs, root, wait);
-      allJobs = extractor.dedupeJobs([...allJobs, ...visibleJobs]);
-
-      const snapshot = {
-        pass: pass + 1,
-        visibleJobs: visibleJobs.length,
-        totalJobs: allJobs.length,
-        targetJobCount,
-      };
-      snapshots.push(snapshot);
-      onProgress(snapshot);
-
-      if (allJobs.length === lastTotal) {
-        stableCount += 1;
-      } else {
-        stableCount = 0;
-      }
-      lastTotal = allJobs.length;
-
-      if (targetJobCount && allJobs.length >= targetJobCount) {
-        break;
-      }
-
-      if (stableCount >= stablePasses && !targetJobCount) {
-        break;
-      }
-
-      const scrollResult = await scroll(root);
-      snapshot.scroll = scrollResult;
-      if (scrollResult && scrollResult.moved === false && stableCount >= 1) {
-        break;
-      }
-      await wait(350);
-    }
-
-    restoreTrigger?.click?.();
+    const extractedJobs = extractor.extractVisibleJobs(root, baseUrl);
+    const visibleJobs = extractor.dedupeJobs(await captureDetailsForVisibleJobs(extractedJobs, root, wait, initialJobId, detailDebug));
+    const allJobs = mergeBetterJobs([], visibleJobs);
+    const stopReason = "visible_jobs_visited_once";
+    const snapshot = {
+      pass: 1,
+      visibleJobs: visibleJobs.length,
+      totalJobs: allJobs.length,
+      targetJobCount: extractedJobs.length,
+      stopReason,
+    };
+    snapshots.push(snapshot);
+    onProgress(snapshot);
 
     return {
-      jobs: targetJobCount ? allJobs.slice(0, targetJobCount) : allJobs,
+      jobs: allJobs,
       passes: snapshots.length,
       snapshots,
+      stopReason,
+      detailDebug,
     };
   }
 
-  async function captureDetailsForVisibleJobs(jobs, root, wait) {
+  async function captureDetailsForVisibleJobs(jobs, root, wait, initialJobId, detailDebug) {
     const enrichedJobs = [];
     for (const job of jobs) {
+      const debug = detailDebugEntry(job);
+      detailDebug.push(debug);
+      const currentDetail = visibleDetailText(root, job);
+      if (initialJobId && jobIdFromUrl(job.source_url) === initialJobId) {
+        const currentMatch = detailMatchStatus(currentDetail, job, jobs, root);
+        const result =
+          currentDetail && currentMatch.ok && isUsefulDetailText(currentDetail)
+            ? { detailText: currentDetail, status: "detail_captured", attempts: 0, ...currentMatch }
+            : await waitForChangedDetail(root, wait, "", job, jobs);
+        Object.assign(debug, summarizeDetailResult(result));
+        enrichedJobs.push(result.detailText ? { ...job, description: appendUniqueText(job.description, result.detailText) } : job);
+        continue;
+      }
+
       const trigger = detailTriggerForJob(job);
       if (!trigger || typeof trigger.click !== "function") {
+        debug.status = "no_usable_detail_trigger";
         enrichedJobs.push(job);
         continue;
       }
 
       const previousDetail = visibleDetailText(root);
       trigger.click();
-      const detailText = await waitForChangedDetail(root, wait, previousDetail);
-      enrichedJobs.push(detailText ? { ...job, description: appendUniqueText(job.description, detailText) } : job);
+      const result = await waitForChangedDetail(root, wait, previousDetail, job, jobs);
+      Object.assign(debug, summarizeDetailResult(result));
+      enrichedJobs.push(result.detailText ? { ...job, description: appendUniqueText(job.description, result.detailText) } : job);
     }
     return enrichedJobs;
+  }
+
+  function detailMatchStatus(detailText, job, allJobs, root) {
+    const expectedId = jobIdFromUrl(job.source_url);
+    const selectedUrl = root?.location?.href || global.location?.href || "";
+    const selectedId = jobIdFromUrl(selectedUrl);
+    if (expectedId && selectedUrl && !selectedId) {
+      return { ok: false, status: "timeout_for_url_to_load", expectedId, selectedId };
+    }
+    if (expectedId && selectedId && expectedId !== selectedId) {
+      return { ok: false, status: "click_does_not_select_job", expectedId, selectedId };
+    }
+    const detail = cleanText(detailText).toLowerCase();
+    if (!detail) {
+      return { ok: false, status: "timeout_for_detail_to_load", expectedId, selectedId };
+    }
+    const opening = detail.slice(0, 120);
+    const company = cleanText(job.company).toLowerCase();
+    if (company && opening.includes(company)) {
+      return { ok: true, status: "detail_matches_job", expectedId, selectedId };
+    }
+    const rejected = allJobs.some((other) => {
+      const otherCompany = cleanText(other.company).toLowerCase();
+      return otherCompany && otherCompany !== company && opening.includes(otherCompany);
+    });
+    return rejected
+      ? { ok: false, status: "guard_rejects_detail", expectedId, selectedId }
+      : { ok: true, status: "detail_matches_job", expectedId, selectedId };
+  }
+
+  function mergeBetterJobs(existingJobs, newJobs) {
+    const merged = [];
+    const indexes = new Map();
+    for (const job of [...existingJobs, ...newJobs]) {
+      const key = jobKey(job) || `${cleanText(job.title).toLowerCase()}:${cleanText(job.company).toLowerCase()}`;
+      const index = indexes.get(key);
+      if (index === undefined) {
+        indexes.set(key, merged.length);
+        merged.push(job);
+      } else if (descriptionQuality(job) > descriptionQuality(merged[index])) {
+        merged[index] = job;
+      }
+    }
+    return merged;
+  }
+
+  function descriptionQuality(job) {
+    const description = cleanText(job?.description);
+    return description.length + (hasUsefulDescription(job) ? 10000 : 0);
+  }
+
+  function hasUsefulDescription(job) {
+    const description = cleanText(job?.description);
+    return isUsefulDetailText(description) && /\b(job description|about the role|about this role|minimum requirements|requirements|qualifications|responsibilities)\b/i.test(description);
   }
 
   function detailTriggerForJob(job) {
     return job?.detailTrigger || job?.card || null;
   }
 
-  async function waitForChangedDetail(root, wait, previousDetail) {
+  function jobKey(job) {
+    return jobIdFromUrl(job?.source_url) || job?.source_url || "";
+  }
+
+  async function waitForChangedDetail(root, wait, previousDetail, job, allJobs) {
     let bestDetail = "";
+    let lastResult = { status: "timeout_for_detail_to_load", expectedId: jobIdFromUrl(job.source_url), selectedId: "" };
+    let bestResult = null;
     for (let attempt = 0; attempt < 14; attempt += 1) {
       expandCollapsedDetails(root);
-      const detailText = visibleDetailText(root);
-      if (detailText && detailText !== previousDetail && isUsefulDetailText(detailText)) {
-        return detailText;
+      const detailText = visibleDetailText(root, job);
+      const match = detailMatchStatus(detailText, job, allJobs, root);
+      lastResult = match;
+      if (detailText && detailText !== previousDetail && isUsefulDetailText(detailText) && match.ok) {
+        return { detailText, status: "detail_captured", attempts: attempt + 1, ...match };
       }
-      if (detailText && detailText !== previousDetail && detailText.length > bestDetail.length) {
+      if (detailText && detailText !== previousDetail && match.ok && detailText.length > bestDetail.length) {
         bestDetail = detailText;
+        bestResult = { ...match, status: "detail_captured_not_useful" };
+        lastResult = bestResult;
       }
       await wait(250);
     }
-    return bestDetail;
+    return { detailText: bestDetail, attempts: 14, ...(bestResult || lastResult) };
+  }
+
+  function detailDebugEntry(job) {
+    return {
+      jobId: jobIdFromUrl(job.source_url),
+      title: job.title,
+      company: job.company,
+      source_url: job.source_url,
+      cardDescriptionLength: cleanText(job.description).length,
+      status: "pending",
+    };
+  }
+
+  function summarizeDetailResult(result) {
+    return {
+      status: result.status,
+      attempts: result.attempts,
+      expectedId: result.expectedId || "",
+      selectedId: result.selectedId || "",
+      detailLength: cleanText(result.detailText).length,
+    };
   }
 
   function expandCollapsedDetails(root) {
@@ -116,15 +180,31 @@
     }
   }
 
-  function visibleDetailText(root) {
+  function visibleDetailText(root, job) {
     const text = cleanText(root.body?.innerText || root.body?.textContent || root.innerText || root.textContent);
-    const start = text.search(/\b(job description|minimum requirements|requirements|responsibilities)\b/i);
+    const headingStart = text.search(
+      /\b(job description|about the role|about this role|about us|minimum requirements|requirements|qualifications|responsibilities)\b/i,
+    );
+    const start = job ? jobDetailStart(text, job, headingStart) : headingStart;
     if (start < 0) {
       return "";
     }
     const detailText = text.slice(start);
     const stop = detailText.search(/\b(similar jobs|alumni in similar roles)\b/i);
     return stop > 0 ? detailText.slice(0, stop) : detailText;
+  }
+
+  function jobDetailStart(text, job, headingStart) {
+    const lowerText = text.toLowerCase();
+    const before = headingStart >= 0 ? headingStart : text.length;
+    const title = cleanText(job.title).toLowerCase();
+    const company = cleanText(job.company).toLowerCase();
+    const titleStart = title ? lowerText.lastIndexOf(title, before) : -1;
+    if (titleStart >= 0) {
+      return titleStart;
+    }
+    const companyStart = company ? lowerText.lastIndexOf(company, before) : -1;
+    return companyStart >= 0 ? companyStart : headingStart;
   }
 
   function isUsefulDetailText(text) {
@@ -144,105 +224,12 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function defaultScroll(root) {
-    const target = findBestScrollTarget(root);
-    const before = getScrollTop(target);
-    const step = getViewportHeight(target) * 0.85;
-    scrollByAmount(target, step);
-    const after = getScrollTop(target);
-    return { moved: after > before, before, after, target: describeScrollTarget(target) };
-  }
-
-  async function defaultResetScroll(root) {
-    const target = findBestScrollTarget(root);
-    scrollToTop(target);
-    return { target: describeScrollTarget(target) };
-  }
-
-  function findBestScrollTarget(root) {
-    const doc = root.ownerDocument || root;
-    const candidates = Array.from(doc.querySelectorAll("main, section, div, ul, [role='list']"));
-    const jobsRegion = doc.querySelector?.('[aria-label="Jobs List"]');
-    const jobsRegionCandidates = jobsRegion
-      ? candidates.filter((element) => element === jobsRegion || jobsRegion.contains?.(element))
-      : [];
-
-    return bestScrollableElement(jobsRegionCandidates) || bestScrollableElement(candidates) || global;
-  }
-
-  function bestScrollableElement(candidates) {
-    let best = null;
-    let bestScrollableDistance = 0;
-    for (const element of candidates) {
-      const scrollableDistance = (element.scrollHeight || 0) - (element.clientHeight || 0);
-      if (scrollableDistance > bestScrollableDistance) {
-        bestScrollableDistance = scrollableDistance;
-        best = element;
-      }
-    }
-
-    return bestScrollableDistance > 120 ? best : null;
-  }
-
-  function getScrollTop(target) {
-    if (target === global) {
-      return global.scrollY || 0;
-    }
-    return target.scrollTop || 0;
-  }
-
-  function getViewportHeight(target) {
-    if (target === global) {
-      return global.innerHeight || 700;
-    }
-    return target.clientHeight || 700;
-  }
-
-  function scrollByAmount(target, top) {
-    if (target === global) {
-      global.scrollBy({ top, behavior: "instant" });
-      return;
-    }
-    target.scrollBy({ top, behavior: "instant" });
-  }
-
-  function scrollToTop(target) {
-    if (target === global) {
-      global.scrollTo({ top: 0, behavior: "instant" });
-      return;
-    }
-    target.scrollTop = 0;
-  }
-
-  function requestedJobCount(baseUrl) {
-    try {
-      const value = Number(new URL(baseUrl).searchParams.get("per_page"));
-      return Number.isFinite(value) && value > 0 && value <= 100 ? value : 0;
-    } catch {
-      return 0;
-    }
-  }
-
   function jobIdFromUrl(url) {
     try {
-      return new URL(url, "https://app.joinhandshake.com").pathname.match(/\/(?:job-search|stu\/jobs)\/(\d+)/)?.[1] || "";
+      return new URL(url, "https://app.joinhandshake.com").pathname.match(/\/(?:job-search|stu\/jobs|jobs)\/(\d+)/)?.[1] || "";
     } catch {
       return "";
     }
-  }
-
-  function describeScrollTarget(target) {
-    if (target === global) {
-      return "window";
-    }
-    return {
-      tag: target.tagName?.toLowerCase?.() || "",
-      role: target.getAttribute?.("role") || "",
-      aria: target.getAttribute?.("aria-label") || "",
-      className: String(target.className || "").slice(0, 80),
-      scrollHeight: target.scrollHeight || 0,
-      clientHeight: target.clientHeight || 0,
-    };
   }
 
   function cleanText(value) {
@@ -251,7 +238,6 @@
 
   const api = {
     collectJobsAcrossScroll,
-    findBestScrollTarget,
   };
 
   if (typeof module !== "undefined" && module.exports) {

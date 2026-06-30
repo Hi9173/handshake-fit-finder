@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -35,6 +35,7 @@ class Profile(Base):
     resume_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     resume_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     resume_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    use_deterministic_extraction: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 

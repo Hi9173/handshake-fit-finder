@@ -22,6 +22,7 @@ import {
   type JobCategory,
   type JobStatus,
 } from "./data/dashboardData";
+import { characteristicSource, orderedProfileSignals, uniqueTerms } from "./profileSignals";
 
 type Profile = typeof defaultProfile;
 
@@ -38,6 +39,7 @@ type ApiProfile = {
   resume_filename: string | null;
   resume_uploaded_at: string | null;
   has_resume: boolean;
+  use_deterministic_extraction: boolean;
 };
 
 type ApiJob = {
@@ -184,6 +186,7 @@ export function App() {
           seniority: profile.seniority,
           resume_characteristics: profile.resumeCharacteristics,
           user_characteristics: userCharacteristics,
+          use_deterministic_extraction: profile.useDeterministicExtraction,
         }),
       });
       if (!response.ok) {
@@ -217,6 +220,7 @@ export function App() {
           seniority: profile.seniority,
           resume_characteristics: profile.resumeCharacteristics.filter((item) => item.toLowerCase() !== key),
           user_characteristics: profile.userCharacteristics.filter((item) => item.toLowerCase() !== key),
+          use_deterministic_extraction: profile.useDeterministicExtraction,
         }),
       });
       if (!response.ok) {
@@ -226,6 +230,72 @@ export function App() {
       setNotice("Signal deleted.");
     } catch (_error) {
       setNotice("Signal delete failed.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function clearSignals() {
+    if (profileSignals.length === 0) {
+      return;
+    }
+
+    setIsSaving(true);
+    setNotice("Clearing signals...");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile.name,
+          target_roles: profile.targetRoles,
+          skills: profile.skills,
+          locations: profile.locations,
+          dealbreakers: profile.dealbreakers,
+          seniority: profile.seniority,
+          resume_characteristics: [],
+          user_characteristics: [],
+          use_deterministic_extraction: profile.useDeterministicExtraction,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshDashboardData();
+      setNotice("Signals cleared.");
+    } catch (_error) {
+      setNotice("Could not clear signals.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function toggleDeterministicExtraction(checked: boolean) {
+    setIsSaving(true);
+    setNotice("Updating extractor...");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile.name,
+          target_roles: profile.targetRoles,
+          skills: profile.skills,
+          locations: profile.locations,
+          dealbreakers: profile.dealbreakers,
+          seniority: profile.seniority,
+          resume_characteristics: profile.resumeCharacteristics,
+          user_characteristics: profile.userCharacteristics,
+          use_deterministic_extraction: checked,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshDashboardData();
+      setNotice(checked ? "Deterministic extraction enabled." : "OpenAI extraction enabled.");
+    } catch (_error) {
+      setNotice("Could not update extractor.");
     } finally {
       setIsSaving(false);
     }
@@ -301,6 +371,7 @@ export function App() {
     );
   }, [activeCategory, jobs, searchQuery]);
   const sortedJobs = useMemo(() => [...filteredJobs].sort((a, b) => b.fit.score - a.fit.score), [filteredJobs]);
+  const profileSignals = useMemo(() => orderedProfileSignals(profile), [profile]);
   const jobCounts = countJobCategories(jobs);
   const activeCategoryLabel = categoryTileLabels[activeCategory];
 
@@ -335,9 +406,21 @@ export function App() {
         </section>
 
         <section className="panel characteristics-panel">
-          <div className="panel-heading">
-            <Sparkles size={18} aria-hidden="true" />
-            <h2>Profile Signals</h2>
+          <div className="panel-heading profile-signals-heading">
+            <div>
+              <Sparkles size={18} aria-hidden="true" />
+              <h2>Profile Signals</h2>
+            </div>
+            <button
+              aria-label="Clear all profile signals"
+              className="clear-signals-button"
+              disabled={isSaving || profileSignals.length === 0}
+              onClick={clearSignals}
+              title="Clear all profile signals"
+              type="button"
+            >
+              <Trash2 size={14} aria-hidden="true" />
+            </button>
           </div>
           <div className="characteristic-legend" aria-label="Characteristic source legend">
             <span>
@@ -349,9 +432,9 @@ export function App() {
               Added by you
             </span>
           </div>
-          {profile.characteristics.length > 0 ? (
+          {profileSignals.length > 0 ? (
             <ul className="characteristic-list">
-              {profile.characteristics.map((characteristic) => {
+              {profileSignals.map((characteristic) => {
                 const source = characteristicSource(characteristic, profile);
                 const sourceLabel = source === "user" ? "added by you" : "from resume";
                 return (
@@ -416,6 +499,16 @@ export function App() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
               />
+            </label>
+            <label className="extraction-toggle">
+              <input
+                type="checkbox"
+                checked={profile.useDeterministicExtraction}
+                disabled={isSaving}
+                onChange={(event) => toggleDeterministicExtraction(event.target.checked)}
+              />
+              <span aria-hidden="true" />
+              Deterministic
             </label>
             <button
               aria-label="Delete all captured jobs"
@@ -518,13 +611,13 @@ export function App() {
                       title="Required Signals"
                       items={signals.required}
                       icon="required"
-                      profileSignals={profile.characteristics}
+                      profileSignals={profileSignals}
                     />
                     <SignalColumn
                       title="Preferred Signals"
                       items={signals.preferred}
                       icon="preferred"
-                      profileSignals={profile.characteristics}
+                      profileSignals={profileSignals}
                     />
                   </div>
 
@@ -558,6 +651,7 @@ function mapProfile(profile: ApiProfile): Profile {
     resumeFilename: profile.resume_filename,
     resumeUploadedAt: profile.resume_uploaded_at,
     hasResume: profile.has_resume,
+    useDeterministicExtraction: profile.use_deterministic_extraction,
   };
 }
 
@@ -585,29 +679,6 @@ function mapJob(job: ApiJob): Job {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
-function characteristicSource(characteristic: string, profile: Profile) {
-  const key = characteristic.toLowerCase();
-  if (profile.userCharacteristics.some((item) => item.toLowerCase() === key)) {
-    return "user";
-  }
-  return "resume";
-}
-
-function uniqueTerms(terms: string[]) {
-  const seen = new Set<string>();
-  const unique: string[] = [];
-  for (const term of terms) {
-    const cleaned = term.trim();
-    const key = cleaned.toLowerCase();
-    if (!key || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    unique.push(cleaned);
-  }
-  return unique;
 }
 
 function jobDisplay(job: Job) {
@@ -649,7 +720,7 @@ function extractRole(job: Job) {
   role = role
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/\$[\d,.]+(?:[–-][\d,.]+)?\s*(?:K|hr|mo|yr)?(?:\/(?:hr|mo|yr))?/gi, " ")
-    .split(/\b(?:Unpaid|Paid|Internship|Full-time(?: job)?|Part[- ]time|Remote|Hybrid|Onsite|Promoted|New)\b/i)[0]
+    .split(/\b(?:Unpaid|Paid|Internship|Full-time(?: job)?|Part[- ]time|Remote|Hybrid|Onsite|Promoted)\b/i)[0]
     .replace(/\s+[A-Z][a-z]+,\s*[A-Z]{2}.*$/, "")
     .trim();
   return (

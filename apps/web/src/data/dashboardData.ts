@@ -83,4 +83,5 @@ export const defaultProfile = {
   resumeFilename: null as string | null,
   resumeUploadedAt: null as string | null,
   hasResume: false,
+  useDeterministicExtraction: false,
 };

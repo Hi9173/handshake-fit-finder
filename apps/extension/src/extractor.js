@@ -18,21 +18,7 @@
       .map((anchor) => extractJobFromAnchor(anchor, baseUrl))
       .filter((job) => job.title && job.company && job.source_url);
 
-    const cards = Array.from(root.querySelectorAll(JOB_CARD_SELECTOR));
-    const jobsFromCards = cards
-      .map((card) => extractJobFromCard(card, baseUrl))
-      .filter((job) => looksLikeJob(job));
-
-    const saveButtons = Array.from(root.querySelectorAll(SAVE_JOB_BUTTON_SELECTOR));
-    const jobsFromSaveButtons = saveButtons
-      .map((button) => extractJobFromSaveButton(button, baseUrl))
-      .filter((job) => looksLikeJob(job));
-
-    return enrichCurrentJobDetails(
-      dedupeJobs([...jobsFromAnchors, ...jobsFromCards, ...jobsFromSaveButtons]),
-      root,
-      baseUrl,
-    );
+    return enrichCurrentJobDetails(dedupeJobs(jobsFromAnchors), root, baseUrl);
   }
 
   function extractJobFromAnchor(anchor, baseUrl) {

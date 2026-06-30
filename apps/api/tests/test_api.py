@@ -1,4 +1,5 @@
 import unittest
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -11,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.main import app
 from app.models import Profile, utc_now
+from app.services.job_extractor import ExtractedJobFacts
 from app.services.resume_extractor import ExtractedResumeFacts
 
 
@@ -329,6 +331,33 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(profile["user_characteristics"], ["Open to startups"])
         self.assertEqual(profile["characteristics"], ["python", "New graduate", "Open to startups"])
 
+    def test_profile_update_clear_signals_stays_clear_after_refresh(self):
+        self.client.post(
+            "/api/profile/resume",
+            files={"file": ("resume.md", b"# Software Engineer\nPython\nRecent graduate\n", "text/markdown")},
+        )
+
+        response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Local Profile",
+                "target_roles": ["software engineer"],
+                "skills": ["python"],
+                "locations": ["remote"],
+                "dealbreakers": [],
+                "seniority": "entry",
+                "resume_characteristics": [],
+                "user_characteristics": [],
+            },
+        )
+        refreshed = self.client.get("/api/profile")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(refreshed.status_code, 200)
+        self.assertEqual(refreshed.json()["resume_characteristics"], [])
+        self.assertEqual(refreshed.json()["user_characteristics"], [])
+        self.assertEqual(refreshed.json()["characteristics"], [])
+
     def test_profile_backfills_resume_characteristics_from_stored_resume_text(self):
         with self.SessionLocal() as db:
             db.add(
@@ -486,6 +515,81 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(len(jobs), 1)
         self.assertIn("python", jobs[0]["fit"]["matched_skills"])
 
+    def test_profile_rescore_uses_extracted_job_signals_before_deterministic_fallback(self):
+        self.upload_data_resume()
+        extracted = ExtractedJobFacts(
+            required_skills=["LangGraph"],
+            preferred_skills=["Vector DB"],
+        )
+        payload = {
+            "jobs": [
+                {
+                    "title": "AI Engineer",
+                    "company": "Model Works",
+                    "location": "Remote",
+                    "description": "Build agent systems.",
+                    "source_url": "https://app.joinhandshake.com/stu/jobs/789",
+                    "source": "handshake-extension",
+                }
+            ]
+        }
+
+        with patch("app.routes.jobs.extract_job_facts", return_value=[extracted]):
+            self.client.post("/api/extension/capture", json=payload)
+            response = self.client.put(
+                "/api/profile",
+                json={
+                    "name": "Local Profile",
+                    "target_roles": ["ai engineer"],
+                    "skills": ["python"],
+                    "locations": ["remote"],
+                    "dealbreakers": [],
+                    "seniority": "entry",
+                },
+            )
+
+        job = self.client.get("/api/jobs").json()[0]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(job["fit"]["required_signals"], ["LangGraph"])
+        self.assertEqual(job["fit"]["preferred_signals"], ["Vector DB"])
+
+    def test_profile_toggle_uses_deterministic_job_extraction(self):
+        response = self.client.put(
+            "/api/profile",
+            json={
+                "name": "Local Profile",
+                "target_roles": ["software engineer"],
+                "skills": ["html"],
+                "locations": ["remote"],
+                "dealbreakers": [],
+                "seniority": "entry",
+                "use_deterministic_extraction": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["use_deterministic_extraction"])
+
+        with patch("app.routes.jobs.extract_job_facts", side_effect=AssertionError("OpenAI extractor called")):
+            capture = self.client.post(
+                "/api/extension/capture",
+                json={
+                    "jobs": [
+                        {
+                            "title": "Web Engineer",
+                            "company": "Kira",
+                            "location": "Remote",
+                            "description": "Minimum Requirements HTML, CSS, JavaScript, and Git.",
+                            "source_url": "https://app.joinhandshake.com/stu/jobs/654",
+                            "source": "handshake-extension",
+                        }
+                    ]
+                },
+            )
+
+        self.assertEqual(capture.status_code, 200)
+        self.assertEqual(capture.json()[0]["fit"]["required_signals"], ["HTML", "CSS", "JavaScript", "Git"])
+
     def test_delete_jobs_clears_captured_jobs_and_scores(self):
         self.client.post(
             "/api/extension/capture",
@@ -555,6 +659,21 @@ class ApiTests(unittest.TestCase):
         job = response.json()[0]
         self.assertLessEqual(len(job["company"]), 255)
         self.assertLessEqual(len(job["location"]), 255)
+
+    def test_extension_debug_log_appends_jsonl(self):
+        with TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "extension-debug.jsonl"
+            with patch("app.routes.jobs.DEBUG_LOG_PATH", log_path):
+                response = self.client.post(
+                    "/api/extension/debug-log",
+                    json={"phase": "captured", "detailDebug": [{"status": "timeout_for_detail_to_load"}]},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {"path": str(log_path)})
+            entry = json.loads(log_path.read_text().strip())
+            self.assertEqual(entry["payload"]["phase"], "captured")
+            self.assertEqual(entry["payload"]["detailDebug"][0]["status"], "timeout_for_detail_to_load")
 
 
 if __name__ == "__main__":
